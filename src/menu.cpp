@@ -64,8 +64,8 @@ MenuInput read_menu_input(float dt) {
     if (r_left.fire(left, dt)) in = MenuInput::Left;
     if (r_right.fire(right, dt)) in = MenuInput::Right;
     // A (east) chooses, B (south) goes back, Start pauses.
-    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_X) || hit(GAMEPAD_BUTTON_RIGHT_FACE_RIGHT)) in = MenuInput::Confirm;
-    if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressed(KEY_Z) || hit(GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) in = MenuInput::Back;
+    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_X) || hit(kPadA)) in = MenuInput::Confirm;
+    if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressed(KEY_Z) || hit(kPadB)) in = MenuInput::Back;
     if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_P) || hit(GAMEPAD_BUTTON_MIDDLE_RIGHT)) in = MenuInput::Pause;
     return in;
 }

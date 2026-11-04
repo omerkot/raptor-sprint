@@ -50,10 +50,12 @@ struct Gfx {
     Mesh sky_mesh{};
     int loc_cam[2] = {-1, -1}, loc_time[2] = {-1, -1}, loc_reach[2] = {-1, -1}, loc_emissive[2] = {-1, -1}, loc_fade = -1;
     bool gles = false;
+    bool rich = false;  // the full treatment, for GPUs with power to spare: light per pixel, leaf
+                        // edges smoothed, then bloom and shafts of light over the finished view
     Vector3 sun_dir = {0, -1, 0};  // direction the light travels
     Vector3 fog_col = {0.5f, 0.55f, 0.5f};
 
-    void init(bool gles, bool small_textures);
+    void init(bool gles, bool small_textures, bool rich = false);
     // The light and air of a region: sun, ambient, fog.
     void set_environment(const Biome& b);
     void begin_frame(const Camera3D& cam, float time, float reach = 1e4f);
@@ -63,7 +65,16 @@ struct Gfx {
     // Leaves, ferns and the path's ragged edges: cut out by the texture's alpha, lit from both sides.
     // Thins out over the last 30% of `fade_to` metres from the camera and is gone past it.
     void draw_cut(const Mesh& mesh, const Matrix& m, Texture2D tex, Color tint = WHITE, float fade_to = 1e4f);
+    // The finishing passes (rich only): `sun` is where the sun falls on the view (0..1, y up), `shafts`
+    // how strongly its light streams through. Then the finished view, in place of drawing it plainly.
+    void post_prepare(Texture2D view, Vector2 sun, float shafts);
+    void post_draw(Texture2D view, Rectangle to);
     void unload();
+
+private:
+    Shader bright{}, radial{}, blur{}, merge{}, finish{};
+    RenderTexture2D low_[3] = {};
+    int loc_sun = -1, loc_amount = -1, loc_step = -1, loc_extra = -1, loc_glow = -1;
 };
 
 extern Gfx gfx;

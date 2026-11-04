@@ -19,12 +19,14 @@
 //   --mute                no sound
 //   --diag                print frame time and draw counts
 //   --uncapped            no vsync or frame cap (to measure how long a frame really takes)
+//   --rich                the full treatment for a strong GPU (on Android, always)
 //   --detail 0|1|2        high, medium or low detail (saved like the setting)
 //   --difficulty 0|1|2    easy, normal or hard (saved like the setting)
 #include <sys/stat.h>
 
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <ctime>
 
 #include "audio.hpp"
@@ -43,11 +45,55 @@
 
 using namespace rr;
 
+#if defined(PLATFORM_ANDROID)
+#include <EGL/egl.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#include <android_native_app_glue.h>
+
+extern "C" struct android_app* GetAndroidApp(void);
+const char* rr::android_data_dir() { return GetAndroidApp()->activity->internalDataPath; }
+
+// Sound stops when the player leaves the game (the loop waits then, but the forest plays on its own).
+static void (*raylib_on_cmd)(struct android_app*, int32_t);
+static void on_app_cmd(struct android_app* app, int32_t cmd) {
+    if (cmd == APP_CMD_LOST_FOCUS || cmd == APP_CMD_PAUSE) SetMasterVolume(0);
+    if (cmd == APP_CMD_GAINED_FOCUS) SetMasterVolume(1);
+    raylib_on_cmd(app, cmd);
+}
+
+// A view target with multisampling done inside the GPU's tile memory, which costs almost nothing
+// on these GPUs. (Falls back on a plain one where that isn't there.)
+static RenderTexture2D load_view_target(int w, int h) {
+    auto storage = (PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC)eglGetProcAddress("glRenderbufferStorageMultisampleEXT");
+    auto attach = (PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC)eglGetProcAddress("glFramebufferTexture2DMultisampleEXT");
+    if (!storage || !attach) return LoadRenderTexture(w, h);
+    RenderTexture2D t = {};
+    t.id = rlLoadFramebuffer();
+    rlEnableFramebuffer(t.id);
+    t.texture = {rlLoadTexture(nullptr, w, h, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, 1), w, h, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
+    t.depth = {0, w, h, 1, 19};
+    attach(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t.texture.id, 0, 4);
+    GLuint depth = 0;
+    glGenRenderbuffers(1, &depth);
+    glBindRenderbuffer(GL_RENDERBUFFER, depth);
+    storage(GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT24_OES, w, h);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth);
+    t.depth.id = depth;
+    bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    rlDisableFramebuffer();
+    TraceLog(LOG_INFO, "view target: %dx%d, multisampled %s", w, h, ok ? "yes" : "no");
+    return ok ? t : LoadRenderTexture(w, h);
+}
+#else
+static RenderTexture2D load_view_target(int w, int h) { return LoadRenderTexture(w, h); }
+#endif
+
 struct Options {
     std::string sheet, pose = "idle";
     int end_r = 0, end_k = 0;  // straight into the endings test (1-based; needs kTestTools)
     float view = 0, zoom = 1, focus_x = 0.2f, focus_y = 0.82f;
-    bool dual = true, low = false, autoplay = false, diag = false, uncapped = false, mute = false;
+    bool dual = true, low = false, rich = false, autoplay = false, diag = false, uncapped = false, mute = false;
     int detail = -1, difficulty = -1;
     int width = 640, height = 480, seed = 0, frames = 0, every = 2, region = 0, level_r = -1, level_k = 0;
     float render_scale = 1.0f, start = 0;
@@ -79,8 +125,8 @@ static Controls read_controls() {
                           (gp && IsGamepadButtonDown(pad, GAMEPAD_BUTTON_LEFT_FACE_LEFT) ? 1.0f : 0.0f),
                       -1, 1);
     // Face buttons by the labels on the handhelds: A (east) jumps, B (south) ducks.
-    in.jump = IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_X) || (gp && IsGamepadButtonPressed(pad, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT));
-    in.duck = IsKeyDown(KEY_Z) || IsKeyDown(KEY_C) || (gp && IsGamepadButtonDown(pad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
+    in.jump = IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_X) || (gp && IsGamepadButtonPressed(pad, kPadA));
+    in.duck = IsKeyDown(KEY_Z) || IsKeyDown(KEY_C) || (gp && IsGamepadButtonDown(pad, kPadB));
     in.sprint = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ||
                 (gp && (IsGamepadButtonDown(pad, GAMEPAD_BUTTON_RIGHT_TRIGGER_1) || IsGamepadButtonDown(pad, GAMEPAD_BUTTON_RIGHT_TRIGGER_2)));
     in.brake = IsKeyDown(KEY_DOWN) || (gp && IsGamepadButtonDown(pad, GAMEPAD_BUTTON_LEFT_FACE_DOWN));
@@ -183,7 +229,18 @@ static Stage title_stage(const Course& c, float t) {
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IOLBF, 0);  // (log.txt stays current, even if the game has to be stopped)
     Options o;
-#if defined(GRAPHICS_API_OPENGL_ES2)
+#if defined(PLATFORM_ANDROID)
+    o.dual = false, o.rich = true;  // (one screen, and a GPU with power to spare)
+    // There's no command line, but a file of arguments in the app's storage does the same job.
+    static std::vector<std::string> file_args = {"raptorsprint"};
+    static std::vector<char*> file_argv;
+    {
+        std::ifstream in(save_path("args.txt"));
+        for (std::string w; in >> w;) file_args.push_back(w);
+        for (std::string& a : file_args) file_argv.push_back(a.data());
+        argc = (int)file_argv.size(), argv = file_argv.data();
+    }
+#elif defined(GRAPHICS_API_OPENGL_ES2)
     o.low = true;
 #endif
     for (int i = 1; i < argc; i++) {
@@ -193,6 +250,8 @@ int main(int argc, char** argv) {
         else if (a == "--res") sscanf(next(), "%dx%d", &o.width, &o.height);
         else if (a == "--low") o.low = true;
         else if (a == "--high") o.low = false;
+        else if (a == "--rich") o.rich = true;
+        else if (a == "--plain") o.rich = false;
         else if (a == "--render-scale") o.render_scale = clampf((float)atof(next()), 0.25f, 2.0f);
         else if (a == "--seed") o.seed = atoi(next());
         else if (a == "--region") o.region = (int)clampf(atoi(next()) - 1, 0, kRegions - 1);
@@ -221,6 +280,9 @@ int main(int argc, char** argv) {
         else if (a == "--detail") o.detail = (int)clampf(atoi(next()), 0, 2);
         else if (a == "--difficulty") o.difficulty = (int)clampf(atoi(next()), 0, 2);
     }
+#if defined(PLATFORM_ANDROID)
+    if (o.diag) freopen(save_path("log.txt").c_str(), "w", stdout), setvbuf(stdout, nullptr, _IOLBF, 0);
+#endif
     if (!o.dump_audio.empty()) {
         Audio::dump(o.dump_audio);
         return 0;
@@ -235,10 +297,18 @@ int main(int argc, char** argv) {
     bool panels = false;
 #endif
     int win_w = o.width, win_h = o.dual && !panels ? o.height * 2 : o.height;
+#if defined(PLATFORM_ANDROID)
+    win_w = win_h = 0;  // the whole screen
+#endif
     SetConfigFlags((o.uncapped ? 0 : FLAG_VSYNC_HINT) | (o.low ? 0 : FLAG_MSAA_4X_HINT));
     SetTraceLogLevel(o.diag ? LOG_INFO : LOG_WARNING);
     InitWindow(win_w, win_h, "Raptor Sprint");
     if (!IsWindowReady()) return 1;
+#if defined(PLATFORM_ANDROID)
+    o.width = GetScreenWidth(), o.height = GetScreenHeight();
+    if (o.diag) printf("[screen] %dx%d\n", o.width, o.height);
+    if (o.uncapped) eglSwapInterval(eglGetCurrentDisplay(), 0);  // (to measure the true frame time)
+#endif
     SetExitKey(KEY_NULL);
     // (Just above 60: the handhelds' screens refresh a little faster, and a cap of exactly 60 fights
     // their vsync and settles on 58.)
@@ -282,9 +352,9 @@ int main(int argc, char** argv) {
     loading();
 
 #if defined(GRAPHICS_API_OPENGL_ES2)
-    gfx.init(true, o.low);
+    gfx.init(true, o.low, o.rich);
 #else
-    gfx.init(false, o.low);
+    gfx.init(false, o.low, o.rich);
 #endif
     // The view's depth range. raylib's default near plane (1 cm) leaves a 16-bit depth buffer only
     // a few centimetres of precision a few metres away, and surfaces close together (a pool on its
@@ -328,6 +398,9 @@ int main(int argc, char** argv) {
     std::string set_path = save_path("settings.cfg");
     set.load(set_path);
     if (!o.mute) audio.init();
+#if defined(PLATFORM_ANDROID)
+    if (!o.mute) raylib_on_cmd = GetAndroidApp()->onAppCmd, GetAndroidApp()->onAppCmd = on_app_cmd;
+#endif
     auto apply_audio = [&]() {
         audio.fx_volume = set.fx / 10.0f;
         audio.forest_volume = set.forest / 10.0f;
@@ -364,6 +437,7 @@ int main(int argc, char** argv) {
         if (seed == course_seed && len == course_len && reg == course_region && diff == course_difficulty && world_ready) return;
         loading();
         double t0 = GetTime();
+        course.lush = o.rich;
         course.generate(seed, len, reg, diff);
         if (world_ready) world.unload();
         world = World{};
@@ -407,7 +481,8 @@ int main(int argc, char** argv) {
         DrawRange r;
         // (On the RG34XXSP the view's pixel count costs more than distance: Low keeps most of the
         // view and saves by resolution.)
-        if (set.detail == 0) r.far = o.low ? 95.0f : 105.0f, r.plants = r.canopy = o.low ? 72.0f : 85.0f;
+        if (set.detail == 0 && o.rich) r.far = 125, r.plants = r.canopy = 105;
+        else if (set.detail == 0) r.far = o.low ? 95.0f : 105.0f, r.plants = r.canopy = o.low ? 72.0f : 85.0f;
         else if (set.detail == 1) r.far = 92, r.plants = 40, r.canopy = 56;
         else r.far = 88, r.plants = 32, r.canopy = 48;
         return r;
@@ -420,7 +495,7 @@ int main(int argc, char** argv) {
         if (w == rw && h == rh && view.id) return;
         if (view.id) UnloadRenderTexture(view);
         rw = w, rh = h;
-        view = LoadRenderTexture(rw, rh);
+        view = load_view_target(rw, rh);
         SetTextureFilter(view.texture, TEXTURE_FILTER_BILINEAR);
     };
     make_view();
@@ -948,6 +1023,14 @@ int main(int argc, char** argv) {
         }
         EndTextureMode();
 
+        if (o.rich) {
+            // Where the sun falls on the view, and how much of it is ahead.
+            Vector3 look = Vector3Normalize(Vector3Subtract(cam.target, cam.position)), to_sun = Vector3Negate(gfx.sun_dir);
+            Vector2 at = GetWorldToScreenEx(Vector3Add(cam.position, Vector3Scale(to_sun, 200)), cam, rw, rh);
+            float facing = clampf((Vector3DotProduct(look, to_sun) - 0.3f) / 0.45f, 0, 1);
+            gfx.post_prepare(view.texture, {at.x / rw, 1.0f - at.y / rh}, facing);
+        }
+
         // The lower screen: the map while racing, otherwise the menu.
         auto draw_lower_screen = [&](Rectangle r) {
             if (screen == Screen::Race) {
@@ -965,7 +1048,8 @@ int main(int argc, char** argv) {
 
         BeginDrawing();
         ClearBackground(BLACK);
-        DrawTexturePro(view.texture, {0, 0, (float)rw, -(float)rh}, top, {0, 0}, 0, WHITE);
+        if (o.rich) gfx.post_draw(view.texture, top);
+        else DrawTexturePro(view.texture, {0, 0, (float)rw, -(float)rh}, top, {0, 0}, 0, WHITE);
         if (dark > 0) DrawRectangleRec(top, Fade(BLACK, dark));
         if (ending) outro.draw_dust(cam, top);
         if (screen == Screen::Race) {
@@ -1075,5 +1159,8 @@ int main(int argc, char** argv) {
     audio.unload();
     ui_unload_font();
     CloseWindow();
+#if defined(PLATFORM_ANDROID)
+    exit(0);  // (the system may keep the process for next time, and nothing here expects a second run)
+#endif
     return 0;
 }

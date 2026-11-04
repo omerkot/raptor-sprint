@@ -1,5 +1,5 @@
 #!/bin/bash
-# The zip files for a release, in dist/release: one for each handheld system and one for the Mac.
+# The files for a release, in dist/release: a zip for each handheld system and the Mac, and the Android app.
 # Usage: scripts/package-release.sh 1.0.0
 # (Builds for the handhelds too, so set CROSS if you need it: see scripts/build.sh.)
 set -e
@@ -31,4 +31,7 @@ cp "$ROOT/build/mac/raptorsprint" "$MAC/"
 cp -R "$ROOT/assets" "$MAC/assets"
 licences "$MAC"
 (cd "$ROOT/dist/mac" && zip -qry "$OUT/raptor-sprint-$VERSION-mac.zip" raptor-sprint -x "*.DS_Store")
+
+"$ROOT/scripts/build-android.sh"
+cp "$ROOT/dist/android/raptor-sprint.apk" "$OUT/raptor-sprint-$VERSION-android.apk"
 ls -la "$OUT"

@@ -7,6 +7,14 @@
 
 namespace rr {
 
+// The buttons labelled A and B. Most handheld systems report them by position, A on the east side;
+// Android reports them by label.
+#if defined(PLATFORM_ANDROID)
+constexpr GamepadButton kPadA = GAMEPAD_BUTTON_RIGHT_FACE_DOWN, kPadB = GAMEPAD_BUTTON_RIGHT_FACE_RIGHT;
+#else
+constexpr GamepadButton kPadA = GAMEPAD_BUTTON_RIGHT_FACE_RIGHT, kPadB = GAMEPAD_BUTTON_RIGHT_FACE_DOWN;
+#endif
+
 enum class MenuInput { None, Up, Down, Left, Right, Confirm, Back, Pause };
 int active_pad();  // the pad in use, or -1
 MenuInput read_menu_input(float dt);

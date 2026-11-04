@@ -47,11 +47,18 @@ inline float ease(float x, float c) {
 
 float randf(float lo = 0.0f, float hi = 1.0f);
 
-// Where the game's files are: assets/ next to the program (in the browser, the preloaded /assets),
-// and the settings file (in the browser, /save, kept in the browser's storage).
+#if defined(PLATFORM_ANDROID)
+const char* android_data_dir();  // the app's own storage
+#endif
+
+// Where the game's files are: assets/ next to the program (in the browser, the preloaded /assets;
+// on Android, inside the app), and the settings file (in the browser, /save, kept in the browser's
+// storage; on Android, the app's own storage).
 inline std::string asset_path(const char* rel) {
 #if defined(__EMSCRIPTEN__)
     return std::string("/assets/") + rel;
+#elif defined(PLATFORM_ANDROID)
+    return rel;
 #else
     return std::string(GetApplicationDirectory()) + "assets/" + rel;
 #endif
@@ -59,6 +66,8 @@ inline std::string asset_path(const char* rel) {
 inline std::string save_path(const char* name) {
 #if defined(__EMSCRIPTEN__)
     return std::string("/save/") + name;
+#elif defined(PLATFORM_ANDROID)
+    return std::string(android_data_dir()) + "/" + name;
 #else
     return std::string(GetApplicationDirectory()) + name;
 #endif

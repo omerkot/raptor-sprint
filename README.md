@@ -1,8 +1,8 @@
 # Raptor Sprint
 
 A first-person race through a prehistoric forest as a velociraptor, written in C++ with raylib for
-handhelds. It runs on the RG DS (both screens), the RG34XXSP and the XU Mini M, and on a Mac
-for development.
+handhelds. It runs on the RG DS (both screens), the RG34XXSP and the XU Mini M, on Android handhelds
+such as the RG406H, and on a Mac.
 
 | Two screens (RG DS) | One screen |
 |---|---|
@@ -12,6 +12,11 @@ Run six regions of four trails, or a new wild trail every time. Leap, duck, swer
 logs, creeks, mud, falling trees and rolling boulders, and earn up to three claws on each trail.
 
 ![One new obstacle for each region](docs/new-obstacles.png)
+
+On Android it has fuller graphics: light worked out per pixel, smooth anti-aliased edges, bloom,
+shafts of sunlight through the trees, twice the undergrowth and a longer view, at 60 fps.
+
+![The forest on the RG406H](docs/android.png)
 
 ## Difficulty
 
@@ -46,6 +51,7 @@ Get the latest version from [Releases](https://github.com/omerkot/raptor-sprint/
 |---|---|---|
 | `raptor-sprint-*-rocknix.zip` | RG DS, XU Mini M | Unzip into `roms/ports` |
 | `raptor-sprint-*-muos.zip` | RG34XXSP | Unzip into `ROMS/Ports` |
+| `raptor-sprint-*-android.apk` | Android 8 or later, 64-bit, with game buttons | Open the file on the device |
 | `raptor-sprint-*-mac.zip` | Mac (M1 or later) | Unzip and open `raptorsprint` |
 
 The Mac version isn't signed, so the first time, right-click `raptorsprint`, choose Open, and confirm.
@@ -61,6 +67,13 @@ The handheld build needs an aarch64 Linux cross compiler (SDL2 and raylib are in
 
 ```bash
 CROSS=/path/to/bin/aarch64-unknown-linux-gnu- scripts/build.sh device
+```
+
+For Android, with the SDK and NDK installed (Python's `cryptography` package signs the app, so Java
+isn't needed):
+
+```bash
+scripts/build-android.sh
 ```
 
 ## Installing on a handheld

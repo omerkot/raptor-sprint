@@ -412,6 +412,29 @@ void Course::generate(int seed_, float len, int region_, int difficulty_) {
         }
     }
 
+    // Lusher still, for those that can afford it. (Plants don't touch the race, so this changes
+    // nothing else.)
+    if (lush) {
+        Rng lrng{(uint32_t)seed * 7919u + 13u};
+        for (int i = 0; i < n; i++) {
+            const PathPt& q = pts[i];
+            Vector3 right = heading_right(q.yaw);
+            for (int side = -1; side <= 1; side += 2) {
+                auto put = [&](PlantKind kind, float lo, float hi, float size_lo, float size_hi, float margin) {
+                    Vector3 at = Vector3Add(q.p, Vector3Scale(right, side * (q.half + lrng(lo, hi))));
+                    at = Vector3Add(at, Vector3Scale(heading_dir(q.yaw), lrng(-0.5f, 0.5f)));
+                    if (on_trail(at, margin)) return;
+                    at.y = ground_at(at.x, at.z, i);
+                    plants.push_back({kind, at, lrng(size_lo, size_hi), lrng(0, kTau), i});
+                };
+                if (lrng() < 0.8f) put(PlantKind::Fern, 0.3f, 7.0f, 0.8f, 1.6f, 0.0f);
+                if (lrng() < 0.8f) put(PlantKind::Grass, -0.3f, 2.5f, 0.4f, 0.8f, -0.5f);
+                if (lrng() < 0.5f) put(PlantKind::Fern, 7.0f, 22.0f, 1.0f, 1.9f, 0.5f);
+                if (lrng() < 0.15f) put(PlantKind::Bush, 3.0f, 26.0f, 1.2f, 2.6f, 1.0f);
+            }
+        }
+    }
+
     // Clear the way for what needs it: a boulder's run down to the trail and the raptor's view of
     // it all the way in, and round a ribcage.
     // (Afterwards, so the forest is otherwise the same at every difficulty.)

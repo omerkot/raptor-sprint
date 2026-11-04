@@ -6,10 +6,12 @@ static Font g_font{};
 static bool g_loaded = false;
 
 void ui_load_font(const std::string& path) {
+#if !defined(PLATFORM_ANDROID)  // (there it's inside the app, where FileExists can't see it)
     if (!FileExists(path.c_str())) {
         TraceLog(LOG_WARNING, "font: %s not found, using the built-in font", path.c_str());
         return;
     }
+#endif
     // One large atlas, mipmapped, so the text stays smooth when drawn small.
     g_font = LoadFontEx(path.c_str(), 72, nullptr, 0);
     GenTextureMipmaps(&g_font.texture);

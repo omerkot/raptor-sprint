@@ -2,6 +2,10 @@
 
 #include <cstring>
 
+#if defined(PLATFORM_ANDROID)
+#include <GLES2/gl2.h>
+#endif
+
 namespace rr {
 
 Gfx gfx;
@@ -217,6 +221,10 @@ uniform vec3 fogCol;
 uniform float fogDensity;
 uniform float time;
 uniform float reach;  // how far the world is drawn
+#ifdef RICH
+varying mediump vec3 vN;
+varying mediump vec3 vView;
+#endif
 varying highp vec2 vUV;
 varying highp vec2 vDap;
 varying vec4 vC;
@@ -251,6 +259,10 @@ void main() {
     vW = W;
     vDist = dist;
 #endif
+#ifdef RICH
+    vN = N;
+    vView = -dir;
+#endif
     vDap = W.xz * 0.05 + vec2(time * 0.006, time * 0.004);
     vC = vertexColor * colDiffuse;
     vUV = vertexTexCoord;
@@ -271,9 +283,10 @@ uniform mediump vec3 sunCol;
 uniform vec3 skyAmb;
 uniform vec3 groundAmb;
 uniform vec3 emissive;
-vec3 shade(vec3 albedo, vec2 light) {
+vec3 shade(vec3 albedo, vec2 light, float sheen) {
     float through = mix(0.10, 1.3, texture2D(texture1, vDap).r);
     vec3 col = albedo * (mix(groundAmb, skyAmb, light.x) + sunCol * (light.y * through)) + emissive;
+    col += sunCol * (sheen * through);
     col = col * vFog.a + vFog.rgb;
     col = vec3(1.0) - exp(-col * 1.25);
     float l = dot(col, vec3(0.3, 0.59, 0.11));
@@ -282,9 +295,29 @@ vec3 shade(vec3 albedo, vec2 light) {
 )";
 
 static const char* LIT_FS = R"(
+#ifdef RICH
+varying mediump vec3 vN;
+varying mediump vec3 vView;
+uniform mediump vec3 toSun;
+float height(highp vec2 uv) { return dot(texture2D(texture0, uv).rgb, vec3(0.33)); }
 void main() {
-    gl_FragColor = vec4(shade(texture2D(texture0, vUV).rgb * vC.rgb, vLight.xy), 1.0);
+    vec3 tex = texture2D(texture0, vUV).rgb;
+    // The texture's own light and dark, read as bumps, so the surface catches the light in detail.
+    float h = dot(tex, vec3(0.33));
+    vec3 N = normalize(vN);
+    vec3 T = normalize(cross(N, vec3(0.31, 0.12, 0.94))), B = cross(N, T);
+    N = normalize(N + (T * (h - height(vUV + vec2(0.004, 0.0))) + B * (h - height(vUV + vec2(0.0, 0.004)))) * 3.5);
+    float nl = dot(N, toSun);
+    vec2 light = vec2(N.y * 0.5 + 0.5, max((nl + 0.25) / 1.25, 0.0));
+    float glance = max(dot(N, normalize(toSun + normalize(vView))), 0.0);
+    float sheen = pow(glance, 28.0) * 0.16;
+    gl_FragColor = vec4(shade(tex * vC.rgb, light, sheen), 1.0);
 }
+#else
+void main() {
+    gl_FragColor = vec4(shade(texture2D(texture0, vUV).rgb * vC.rgb, vLight.xy, 0.0), 1.0);
+}
+#endif
 )";
 
 static const char* CUT_FS = R"(
@@ -301,8 +334,93 @@ void main() {
         if (keep <= fract((p3.x + p3.y) * p3.z)) discard;
     }
     vec4 t = texture2D(texture0, vUV);
+#ifdef RICH
+    // Soft edges: the alpha becomes coverage across the multisamples.
+    if (t.a < 0.25) discard;
+    gl_FragColor = vec4(shade(t.rgb * vC.rgb, gl_FrontFacing ? vLight.xy : vLight.zw, 0.0), clamp((t.a - 0.35) * 3.3, 0.0, 1.0));
+#else
     if (t.a < 0.5) discard;
-    gl_FragColor = vec4(shade(t.rgb * vC.rgb, gl_FrontFacing ? vLight.xy : vLight.zw), 1.0);
+    gl_FragColor = vec4(shade(t.rgb * vC.rgb, gl_FrontFacing ? vLight.xy : vLight.zw, 0.0), 1.0);
+#endif
+}
+)";
+
+// The finishing passes, at a quarter of the view's size, then over it. (rich only)
+static const char* POST_VS = R"(
+attribute vec3 vertexPosition;
+attribute vec2 vertexTexCoord;
+uniform mat4 mvp;
+varying highp vec2 vUV;
+void main() {
+    vUV = vertexTexCoord;
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+)";
+// What's bright enough to glow.
+static const char* BRIGHT_FS = R"(
+varying highp vec2 vUV;
+uniform sampler2D texture0;
+void main() {
+    vec3 c = texture2D(texture0, vUV).rgb;
+    float l = dot(c, vec3(0.3, 0.59, 0.11));
+    gl_FragColor = vec4(c * smoothstep(0.5, 0.88, l), 1.0);
+}
+)";
+// Light streaming away from the sun, through the gaps between the trunks: the bright pixels of the
+// upper view, smeared along the lines leading to the sun.
+static const char* RADIAL_FS = R"(
+varying highp vec2 vUV;
+uniform sampler2D texture0;
+uniform vec2 sun;
+uniform float amount;
+void main() {
+    vec2 p = vUV, d = (sun - vUV) * (0.85 / 14.0);
+    vec3 c = vec3(0.0);
+    float w = 1.0;
+    for (int i = 0; i < 14; i++) {
+        c += texture2D(texture0, p).rgb * (w * smoothstep(0.42, 0.72, p.y));
+        w *= 0.93;
+        p += d;
+    }
+    gl_FragColor = vec4(c * (amount * 0.17 * smoothstep(0.3, 0.62, vUV.y)), 1.0);  // (in the air, not on the ground)
+}
+)";
+static const char* BLUR_FS = R"(
+varying highp vec2 vUV;
+uniform sampler2D texture0;
+uniform vec2 stepBy;
+void main() {
+    vec3 c = texture2D(texture0, vUV).rgb * 0.227;
+    c += (texture2D(texture0, vUV + stepBy * 1.385).rgb + texture2D(texture0, vUV - stepBy * 1.385).rgb) * 0.316;
+    c += (texture2D(texture0, vUV + stepBy * 3.231).rgb + texture2D(texture0, vUV - stepBy * 3.231).rgb) * 0.070;
+    gl_FragColor = vec4(c, 1.0);
+}
+)";
+// The blurred glow and the shafts together.
+static const char* MERGE_FS = R"(
+varying highp vec2 vUV;
+uniform sampler2D texture0;
+uniform sampler2D extra;
+void main() {
+    gl_FragColor = vec4(texture2D(texture0, vUV).rgb * 0.6 + texture2D(extra, vUV).rgb, 1.0);
+}
+)";
+// The view with its light added, a little more contrast, and the corners falling away.
+static const char* FINISH_FS = R"(
+varying highp vec2 vUV;
+uniform sampler2D texture0;
+uniform sampler2D glow;
+void main() {
+    vec3 c = texture2D(texture0, vUV).rgb;
+    vec3 g = texture2D(glow, vUV).rgb;
+    c = pow(c, vec3(0.8));  // (open up the shadows: the forest floor is where the eye is)
+    c = vec3(1.0) - (vec3(1.0) - c) * (vec3(1.0) - g);
+    c = mix(c, c * c * (3.0 - 2.0 * c), 0.25);
+    float l = dot(c, vec3(0.3, 0.59, 0.11));
+    c = mix(vec3(l), c, 1.14);
+    vec2 q = vUV - 0.5;
+    c *= 1.0 - dot(q, q) * 0.28;
+    gl_FragColor = vec4(c, 1.0);
 }
 )";
 
@@ -374,16 +492,29 @@ static void setup_lit(Shader& s, int idx, const Vector3& sun_dir, const Vector3&
     SetShaderValue(s, GetShaderLocation(s, "groundAmb"), &ground_amb, SHADER_UNIFORM_VEC3);
     SetShaderValue(s, GetShaderLocation(s, "fogCol"), &fog_col, SHADER_UNIFORM_VEC3);
     SetShaderValue(s, GetShaderLocation(s, "fogDensity"), &fog, SHADER_UNIFORM_FLOAT);
+    Vector3 to_sun = Vector3Negate(sun_dir);
+    int loc_to_sun = GetShaderLocation(s, "toSun");
+    if (loc_to_sun >= 0) SetShaderValue(s, loc_to_sun, &to_sun, SHADER_UNIFORM_VEC3);
 }
 
-void Gfx::init(bool gles, bool small_textures) {
+void Gfx::init(bool gles, bool small_textures, bool rich) {
     this->gles = gles;
-    std::string lit_fs = std::string(LIGHTING) + LIT_FS, cut_fs = std::string(LIGHTING) + CUT_FS;
-    std::string cut_vs = std::string("#define CUTOUT\n") + LIT_VS;
-    lit = LoadShaderFromMemory(vs_src(LIT_VS, gles).c_str(), fs_src(lit_fs.c_str(), gles, true).c_str());
+    this->rich = rich;
+    std::string tier = rich ? "#define RICH\n" : "";
+    std::string lit_vs = tier + LIT_VS, lit_fs = tier + LIGHTING + LIT_FS, cut_fs = tier + LIGHTING + CUT_FS;
+    std::string cut_vs = tier + "#define CUTOUT\n" + LIT_VS;
+    lit = LoadShaderFromMemory(vs_src(lit_vs.c_str(), gles).c_str(), fs_src(lit_fs.c_str(), gles, true).c_str());
     cut = LoadShaderFromMemory(vs_src(cut_vs.c_str(), gles).c_str(), fs_src(cut_fs.c_str(), gles, true).c_str());
     sky = LoadShaderFromMemory(vs_src(SKY_VS, gles).c_str(), fs_src(SKY_FS, gles).c_str());
     tex.paint(small_textures);
+    if (rich) {
+        // Sharp ground right out to the horizon, however shallow the angle.
+        for (Texture2D t : {tex.floor, tex.path, tex.bark, tex.rock, tex.fern, tex.grass, tex.leaves}) SetTextureFilter(t, TEXTURE_FILTER_ANISOTROPIC_8X);
+        auto post = [&](const char* fs) { return LoadShaderFromMemory(vs_src(POST_VS, gles).c_str(), fs_src(fs, gles).c_str()); };
+        bright = post(BRIGHT_FS), radial = post(RADIAL_FS), blur = post(BLUR_FS), merge = post(MERGE_FS), finish = post(FINISH_FS);
+        loc_sun = GetShaderLocation(radial, "sun"), loc_amount = GetShaderLocation(radial, "amount");
+        loc_step = GetShaderLocation(blur, "stepBy"), loc_extra = GetShaderLocation(merge, "extra"), loc_glow = GetShaderLocation(finish, "glow");
+    }
 
     set_environment(region(0).biome);
 
@@ -445,12 +576,59 @@ void Gfx::draw_cut(const Mesh& mesh, const Matrix& m, Texture2D t, Color tint, f
     cut_mat.maps[MATERIAL_MAP_DIFFUSE].texture = t;
     cut_mat.maps[MATERIAL_MAP_DIFFUSE].color = tint;
     rlDisableBackfaceCulling();
+#if defined(PLATFORM_ANDROID)
+    if (rich) glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+#endif
     DrawMesh(mesh, cut_mat, m);
     rlDrawRenderBatchActive();
+#if defined(PLATFORM_ANDROID)
+    if (rich) glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+#endif
     rlEnableBackfaceCulling();
 }
 
+void Gfx::post_prepare(Texture2D view, Vector2 sun, float shafts) {
+    int w = view.width / 4, h = view.height / 4;
+    if (low_[0].texture.width != w || low_[0].texture.height != h)
+        for (RenderTexture2D& t : low_) {
+            if (t.id) UnloadRenderTexture(t);
+            t = LoadRenderTexture(w, h);
+            SetTextureFilter(t.texture, TEXTURE_FILTER_BILINEAR);
+            SetTextureWrap(t.texture, TEXTURE_WRAP_CLAMP);
+        }
+    Rectangle to = {0, 0, (float)w, (float)h};
+    auto pass = [&](RenderTexture2D& out, Shader& s, Texture2D in, auto&& uniforms) {
+        BeginTextureMode(out);
+        BeginShaderMode(s);
+        uniforms();
+        DrawTexturePro(in, {0, 0, (float)in.width, -(float)in.height}, to, {0, 0}, 0, WHITE);
+        EndShaderMode();
+        EndTextureMode();
+    };
+    Vector2 across = {1.0f / w, 0}, down = {0, 1.0f / h};
+    pass(low_[0], bright, view, [] {});
+    pass(low_[1], radial, low_[0].texture, [&] {
+        SetShaderValue(radial, loc_sun, &sun, SHADER_UNIFORM_VEC2);
+        SetShaderValue(radial, loc_amount, &shafts, SHADER_UNIFORM_FLOAT);
+    });
+    pass(low_[2], blur, low_[0].texture, [&] { SetShaderValue(blur, loc_step, &across, SHADER_UNIFORM_VEC2); });
+    pass(low_[0], blur, low_[2].texture, [&] { SetShaderValue(blur, loc_step, &down, SHADER_UNIFORM_VEC2); });
+    pass(low_[2], merge, low_[0].texture, [&] { SetShaderValueTexture(merge, loc_extra, low_[1].texture); });
+}
+
+void Gfx::post_draw(Texture2D view, Rectangle to) {
+    BeginShaderMode(finish);
+    SetShaderValueTexture(finish, loc_glow, low_[2].texture);
+    DrawTexturePro(view, {0, 0, (float)view.width, -(float)view.height}, to, {0, 0}, 0, WHITE);
+    EndShaderMode();
+}
+
 void Gfx::unload() {
+    if (rich) {
+        for (Shader s : {bright, radial, blur, merge, finish}) UnloadShader(s);
+        for (RenderTexture2D& t : low_)
+            if (t.id) UnloadRenderTexture(t);
+    }
     UnloadShader(lit);
     UnloadShader(cut);
     UnloadShader(sky);
