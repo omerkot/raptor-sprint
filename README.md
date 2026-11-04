@@ -88,6 +88,6 @@ keep their own licenses:
 
 | Component | License |
 |---|---|
-| [raylib](https://www.raylib.com) (`third_party/raylib`) | zlib/libpng |
+| [raylib](https://www.raylib.com) (`third_party/raylib`) | zlib/libpng, `third_party/raylib/LICENSE` |
 | [SDL2](https://www.libsdl.org) (`third_party/sdl2`) | zlib, `third_party/sdl2/LICENSE.txt` |
 | Nunito font (`assets/fonts/`) | SIL Open Font License, `assets/fonts/Nunito-OFL.txt` |
