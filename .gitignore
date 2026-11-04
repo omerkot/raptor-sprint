@@ -1,0 +1,14 @@
+# Built programs and packages
+build/
+dist/
+
+# Working images and test captures
+shots/
+/*.png
+
+# Saves and logs from test runs
+*.log
+best_*.txt
+journey*.txt
+settings.cfg
+.DS_Store
