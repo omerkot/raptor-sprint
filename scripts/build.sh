@@ -13,7 +13,8 @@ mkdir -p "$OUT"
 SRC=("$ROOT"/src/*.cpp)
 COMMON=(-std=c++17 -O2 -Wall -Wno-missing-braces "-I$ROOT/third_party/raylib/include")
 if [ "$TARGET" = mac ]; then
-	clang++ "${COMMON[@]}" -DGRAPHICS_API_OPENGL_33 "${SRC[@]}" "$ROOT/third_party/raylib/mac/libraylib.a" \
+	# (Without a minimum version, the program would only run on the macOS it was built on.)
+	clang++ "${COMMON[@]}" -mmacosx-version-min=12.0 -DGRAPHICS_API_OPENGL_33 "${SRC[@]}" "$ROOT/third_party/raylib/mac/libraylib.a" \
 		-framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo -framework CoreAudio -framework AudioToolbox \
 		-o "$OUT/raptorsprint"
 else

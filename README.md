@@ -38,6 +38,18 @@ Each difficulty keeps its own best times and claws. Finishing a trail at any dif
 
 Five clean moves in a row win back 20% breath.
 
+## Download
+
+Get the latest version from [Releases](https://github.com/omerkot/raptor-sprint/releases):
+
+| File | For | Install |
+|---|---|---|
+| `raptor-sprint-*-rocknix.zip` | RG DS, XU Mini M | Unzip into `roms/ports` |
+| `raptor-sprint-*-muos.zip` | RG34XXSP | Unzip into `ROMS/Ports` |
+| `raptor-sprint-*-mac.zip` | Mac (M1 or later) | Unzip and open `raptorsprint` |
+
+The Mac version isn't signed, so the first time, right-click `raptorsprint`, choose Open, and confirm.
+
 ## Building
 
 ```bash
