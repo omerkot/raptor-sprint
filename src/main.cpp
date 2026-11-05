@@ -658,12 +658,25 @@ int main(int argc, char** argv) {
         else if (screen == Screen::Settings) sel_settings = s;
         else sel_pause = s;
     };
-    // Step a wild trail's region through those already reached.
-    auto step_wild_region = [&](int dir) {
-        for (int i = 0; i < kRegions; i++) {
-            set.wild_region = (set.wild_region + dir + kRegions) % kRegions;
-            if (prog.region_open(set.wild_region)) break;
+    // Left and right move a setting along and stop at its ends, and A moves it right. (Wild trails
+    // only go to regions already reached; Detail is stored high first, but runs low to high.)
+    auto step_value = [&](int id, int dir) {
+        auto along = [&](int v, int last) { return std::clamp(v + dir, 0, last); };
+        if (id == DIFFICULTY) set.difficulty = prog.difficulty = along(set.difficulty, kDifficulties - 1);
+        else if (id == W_REGION) {
+            if (prog.region_open(along(set.wild_region, kRegions - 1))) set.wild_region = along(set.wild_region, kRegions - 1);
         }
+        else if (id == W_LENGTH) set.length = along(set.length, 2);
+        else if (id == FX) set.fx = along(set.fx, 10);
+        else if (id == FOREST) set.forest = along(set.forest, 10);
+        else if (id == SPRINT) set.sprint_toggle = dir > 0;
+        else if (id == BOB) set.bob = along(set.bob, 2);
+        else if (id == FPS) set.show_fps = dir > 0;
+        else if (id == DETAIL) set.detail = std::clamp(set.detail - dir, 0, 2), make_view();
+        else return;
+        apply_audio();
+        set.save(set_path);
+        audio.play(Sfx::MenuMove);
     };
 
     float time = 0;
@@ -695,24 +708,9 @@ int main(int argc, char** argv) {
                 if (menu.move(mi == MenuInput::Up ? -1 : 1)) audio.play(Sfx::MenuMove);
                 keep_sel(menu.sel);
             } else if (dir != 0) {
-                bool changed = true;
-                if (screen == Screen::Journey) browse_r = (browse_r + dir + kRegions) % kRegions, changed = false, audio.play(Sfx::MenuMove);
-                else if (screen == Screen::Endings) end_r = (end_r + dir + kRegions) % kRegions, changed = false, audio.play(Sfx::MenuMove);
-                else if (id == DIFFICULTY) set.difficulty = prog.difficulty = (set.difficulty + dir + kDifficulties) % kDifficulties;
-                else if (id == W_REGION) step_wild_region(dir);
-                else if (id == W_LENGTH) set.length = (int)clampf(set.length + dir, 0, 2);
-                else if (id == FX) set.fx = (int)clampf(set.fx + dir, 0, 10);
-                else if (id == FOREST) set.forest = (int)clampf(set.forest + dir, 0, 10);
-                else if (id == SPRINT) set.sprint_toggle = !set.sprint_toggle;
-                else if (id == BOB) set.bob = (int)clampf(set.bob + dir, 0, 2);
-                else if (id == FPS) set.show_fps = !set.show_fps;
-                else if (id == DETAIL) set.detail = (int)clampf(set.detail + dir, 0, 2), make_view();
-                else changed = false;
-                if (changed) {
-                    apply_audio();
-                    set.save(set_path);
-                    audio.play(Sfx::MenuMove);
-                }
+                if (screen == Screen::Journey) browse_r = std::clamp(browse_r + dir, 0, kRegions - 1), audio.play(Sfx::MenuMove);
+                else if (screen == Screen::Endings) end_r = std::clamp(end_r + dir, 0, kRegions - 1), audio.play(Sfx::MenuMove);
+                else step_value(id, dir);
             } else if (mi == MenuInput::Confirm) {
                 switch (id) {
                     case JOURNEY:
@@ -788,28 +786,13 @@ int main(int argc, char** argv) {
                             restart();
                             screen = Screen::Race;
                         } else if (id == E_REGION) {
-                            end_r = (end_r + 1) % kRegions;
+                            end_r = std::min(end_r + 1, kRegions - 1);
                             audio.play(Sfx::MenuMove);
                         } else if (id == J_REGION) {
-                            browse_r = (browse_r + 1) % kRegions;
+                            browse_r = std::min(browse_r + 1, kRegions - 1);
                             audio.play(Sfx::MenuMove);
-                        } else if (id == DIFFICULTY) {
-                            set.difficulty = prog.difficulty = (set.difficulty + 1) % kDifficulties;
-                            set.save(set_path);
-                            audio.play(Sfx::MenuMove);
-                        } else if (id == W_REGION || id == W_LENGTH || id == FX || id == FOREST || id == SPRINT || id == BOB || id == FPS || id == DETAIL) {
-                            // value items: A steps them forward too
-                            if (id == W_REGION) step_wild_region(1);
-                            else if (id == W_LENGTH) set.length = (set.length + 1) % 3;
-                            else if (id == FX) set.fx = (set.fx + 1) % 11;
-                            else if (id == FOREST) set.forest = (set.forest + 1) % 11;
-                            else if (id == SPRINT) set.sprint_toggle = !set.sprint_toggle;
-                            else if (id == BOB) set.bob = (set.bob + 1) % 3;
-                            else if (id == DETAIL) set.detail = (set.detail + 1) % 3, make_view();
-                            else set.show_fps = !set.show_fps;
-                            apply_audio();
-                            set.save(set_path);
-                            audio.play(Sfx::MenuMove);
+                        } else {
+                            step_value(id, 1);
                         }
                 }
             } else if (mi == MenuInput::Back || mi == MenuInput::Pause) {
