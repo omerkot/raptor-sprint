@@ -26,7 +26,7 @@ $ESUDO chmod +x "$GAMEDIR/$BINARY"
 
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 
-$GPTOKEYB2 "$BINARY" &
+$GPTOKEYB2 "raptorsprint" > /dev/null 2>&1 &
 pm_platform_helper "$GAMEDIR/$BINARY"
 ./$BINARY --res "${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}"
 

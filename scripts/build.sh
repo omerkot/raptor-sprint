@@ -21,7 +21,7 @@ else
 	X="${CROSS:-aarch64-unknown-linux-gnu-}"
 	"${X}g++" "${COMMON[@]}" -DGRAPHICS_API_OPENGL_ES2 -DPLATFORM_DESKTOP_SDL "-I$ROOT/third_party/sdl2/include" "${SRC[@]}" "$ROOT/third_party/raylib/device/libraylib.a" \
 		"$ROOT/third_party/sdl2/lib/libSDL2.so" \
-		-static-libstdc++ -static-libgcc -Wl,--unresolved-symbols=ignore-in-shared-libs -ldl -lpthread -lm \
+		-Wl,--unresolved-symbols=ignore-in-shared-libs -ldl -lpthread -lm \
 		-o "$OUT/raptorsprint"
 	"${X}strip" "$OUT/raptorsprint"
 fi

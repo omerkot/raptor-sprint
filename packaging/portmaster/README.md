@@ -19,8 +19,11 @@ On a two-screen device this version plays on one screen.
 
 ## Compile
 
-The source is at [omerkot/raptor-sprint](https://github.com/omerkot/raptor-sprint). With an aarch64 Linux cross compiler:
+raylib and the SDL2 headers are in the repository, so only a compiler is needed.
 
-```
-scripts/build.sh device
+```bash
+apt-get install g++-aarch64-linux-gnu
+git clone https://github.com/omerkot/raptor-sprint.git
+cd raptor-sprint
+CROSS=aarch64-linux-gnu- scripts/build.sh device
 ```
