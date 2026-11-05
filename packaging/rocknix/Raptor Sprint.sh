@@ -20,8 +20,8 @@ export SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS=0
 # The pad works whichever of the game's windows has the focus (the menu is paused meanwhile).
 export SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1
 export MALI_DEFAULT_DISPLAY=wayland
-# ROCKNIX's pad mapping puts the A button (east) on SDL's "a"; the game reads A as the east
-# button, so swap a/b only. X and Y stay as they are.
+# ROCKNIX's pad mapping puts the A button (east) on SDL's "a"; with --pad-position the game reads
+# A as the east button, so swap a/b only. X and Y stay as they are.
 DB=/storage/.config/SDL-GameControllerDB/gamecontrollerdb.txt
 if [ -f "$DB" ]; then
     SDL_GAMECONTROLLERCONFIG="$(grep "retrogame_joypad" "$DB" | sed -e "s/a:b0/a:b1/g" -e "s/b:b1/b:b0/g")"
@@ -38,12 +38,12 @@ fi
 outputs=$(swaymsg -t get_outputs -r 2>/dev/null | jq -r '.[].name' 2>/dev/null || true)
 UPPER=DSI-2
 LOWER=DSI-1
-layout=()
+layout=(--layout dual)
 if [ -n "$outputs" ] && ! echo "$outputs" | grep -qx DSI-2; then
     UPPER=$(echo "$outputs" | head -n 1)
     LOWER=""
     size=$(swaymsg -t get_outputs -r 2>/dev/null | jq -r '.[0] | "\(.rect.width)x\(.rect.height)"' 2>/dev/null || true)
-    layout=(--layout single)
+    layout=()
     case "$size" in [0-9]*x[0-9]*) layout+=(--res "$size") ;; esac
 else
     export SDL_VIDEO_DISPLAY_PRIORITY=$UPPER,$LOWER
@@ -102,7 +102,7 @@ swaymsg -q "for_window [title=\"^Raptor Sprint\$\"] border none, move window to 
 focus_pid=$!
 
 # Debugging: an empty file named diag.on next to the game logs frame times to log.txt.
-args=("${layout[@]}" "$@")
+args=("${layout[@]}" --pad-position "$@")
 [ -f "$GAMEDIR/diag.on" ] && args+=(--diag)
 cd "$GAMEDIR" || exit 1
 ./raptorsprint.aarch64 "${args[@]}" > log.txt 2>&1

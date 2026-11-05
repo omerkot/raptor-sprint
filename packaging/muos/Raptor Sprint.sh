@@ -9,8 +9,8 @@ GAMEDIR="$PORTDIR/raptorsprint"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run}"
 export SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS=0
 # muOS maps the pad by printed label (a: is the A button, on the east side); the game reads
-# positions like SDL's own layout (a = south), so swap a/b and x/y to
-# make each button do what its label says.
+# positions (--pad-position: A = east, B = south), so swap a/b and x/y to make each button do what
+# its label says.
 export SDL_GAMECONTROLLERCONFIG_FILE=/usr/lib/gamecontrollerdb.txt
 if [ -r /opt/muos/device/config/sdl/name ]; then
     controller_name=$(cat /opt/muos/device/config/sdl/name)
@@ -38,6 +38,6 @@ fi
 DIAG=""
 [ -f "$GAMEDIR/diag.on" ] && DIAG=--diag
 cd "$GAMEDIR" || exit 1
-./raptorsprint.aarch64 --res "${W:-720}x${H:-480}" $DIAG "$@" > log.txt 2>&1
+./raptorsprint.aarch64 --pad-position --res "${W:-720}x${H:-480}" $DIAG "$@" > log.txt 2>&1
 [ -n "$OLD_GOV" ] && echo "$OLD_GOV" > "$GOV_FILE"
 exit 0

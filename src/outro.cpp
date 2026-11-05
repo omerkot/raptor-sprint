@@ -323,17 +323,20 @@ void Outro::update(float dt) {
     bits_.erase(std::remove_if(bits_.begin(), bits_.end(), [](const Bit& b) { return b.life <= 0; }), bits_.end());
 }
 
-Camera3D Outro::camera(const Camera3D& eyes, bool right) const {
+Camera3D Outro::camera(const Camera3D& eyes, float beside_card) const {
     float w = ease(t / 1.1f);
     Vector3 pos = Vector3Lerp(eyes.position, cam_pos_, w), look = Vector3Lerp(eyes.target, cam_look_, w);
     if (shake_ > 0) {
         float s = shake_ * shake_ * 0.12f;
         pos = add(pos, {s * std::sin(t * 53.0f), s * std::sin(t * 41.0f + 1.0f), s * std::sin(t * 59.0f + 2.0f)});
     }
-    if (right) {
-        Vector3 d = Vector3Subtract(look, pos);
+    if (beside_card > 0) {
+        // Turn just far enough, on this shape of screen, to put the raptor in the middle of the space
+        // right of the card: halfway from the middle of the screen to its right edge.
+        Vector3 d = Vector3Subtract(focus_, pos);
         Vector3 side = Vector3Normalize(Vector3CrossProduct(d, kUp));
-        look = Vector3Subtract(look, mul(side, Vector3Length(d) * 0.2f * w));
+        float off = 0.5f * beside_card * std::tan(26.0f * DEG2RAD);  // (half of the camera's 52 degrees)
+        look = Vector3Lerp(look, add(Vector3Subtract(focus_, mul(side, Vector3Length(d) * off)), {0, 0.1f, 0}), w);
     }
     Camera3D c = {};
     c.position = pos;

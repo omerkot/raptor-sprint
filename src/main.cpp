@@ -1,8 +1,10 @@
 // Raptor Sprint: a first-person race through a forest as a velociraptor, built on raylib. Two
 // screens, as on the RG DS: the view on top, the blind map (and the menus) below.
 //   --layout dual|single  both screens stacked in one window (default on a desktop) or the view
-//                         alone. The handheld build opens a window per panel instead.
+//                         alone (default on a handheld). The handheld build's dual layout opens a
+//                         window per panel instead.
 //   --res WxH             size of one screen (default 640x480)
+//   --pad-position        A is the east button and B the south, whatever the system calls them
 //   --low / --high        handheld quality (smaller textures, coarser terrain) or full
 //   --render-scale F      render the view at a fraction (or multiple, up to 2) of the screen size
 //   --seed N              race this course number straight away (skips the title)
@@ -124,9 +126,9 @@ static Controls read_controls() {
                           (gp && IsGamepadButtonDown(pad, GAMEPAD_BUTTON_LEFT_FACE_RIGHT) ? 1.0f : 0.0f) -
                           (gp && IsGamepadButtonDown(pad, GAMEPAD_BUTTON_LEFT_FACE_LEFT) ? 1.0f : 0.0f),
                       -1, 1);
-    // Face buttons by the labels on the handhelds: A (east) jumps, B (south) ducks.
-    in.jump = IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_X) || (gp && IsGamepadButtonPressed(pad, kPadA));
-    in.duck = IsKeyDown(KEY_Z) || IsKeyDown(KEY_C) || (gp && IsGamepadButtonDown(pad, kPadB));
+    // A jumps, B ducks.
+    in.jump = IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_X) || (gp && IsGamepadButtonPressed(pad, pad_a));
+    in.duck = IsKeyDown(KEY_Z) || IsKeyDown(KEY_C) || (gp && IsGamepadButtonDown(pad, pad_b));
     in.sprint = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ||
                 (gp && (IsGamepadButtonDown(pad, GAMEPAD_BUTTON_RIGHT_TRIGGER_1) || IsGamepadButtonDown(pad, GAMEPAD_BUTTON_RIGHT_TRIGGER_2)));
     in.brake = IsKeyDown(KEY_DOWN) || (gp && IsGamepadButtonDown(pad, GAMEPAD_BUTTON_LEFT_FACE_DOWN));
@@ -195,11 +197,13 @@ static Camera3D title_camera(const Course& c, float t, float* dark) {
 
 // The title's stage: a straight stretch of trail with nothing on it, where the raptor shows
 // itself off, and the camera standing back, looking a little to its left so it stands on the right.
+// `beside_menu` is the screen's shape when the menu is on the same screen: then the camera turns just
+// far enough, on that shape, to put the raptor in the middle of the space right of the menu.
 struct Stage {
     Matrix frame;  // x right, y up, z back towards the camera
     Camera3D cam;
 };
-static Stage title_stage(const Course& c, float t) {
+static Stage title_stage(const Course& c, float t, float beside_menu) {
     int n = (int)c.pts.size(), at = std::min(n - 1, 30);
     for (int i = 30; i + 20 < n; i++) {
         bool clear = std::fabs(angle_diff(c.pts[i - 10].yaw, c.pts[i + 4].yaw)) < 0.15f;
@@ -219,9 +223,15 @@ static Stage title_stage(const Course& c, float t) {
     };
     s.cam = {};
     s.cam.position = place(5.7f, -0.2f + 0.25f * std::sin(t * 0.21f), 1.5f + 0.08f * std::sin(t * 0.37f));
-    s.cam.target = place(-0.3f, -1.75f, 0.7f);
-    s.cam.up = up;
     s.cam.fovy = 52.0f;
+    float look = -1.75f;
+    if (beside_menu > 0) {
+        float spot = 0.54f;  // (from the middle of the screen to its right edge: the menu ends at 54% across)
+        float off = std::atan(spot * beside_menu * std::tan(s.cam.fovy * 0.5f * DEG2RAD));
+        look = -0.2f + 6.0f * std::tan(std::atan(0.2f / 5.7f) - off);
+    }
+    s.cam.target = place(-0.3f, look, 0.7f);
+    s.cam.up = up;
     s.cam.projection = CAMERA_PERSPECTIVE;
     return s;
 }
@@ -241,13 +251,14 @@ int main(int argc, char** argv) {
         argc = (int)file_argv.size(), argv = file_argv.data();
     }
 #elif defined(GRAPHICS_API_OPENGL_ES2)
-    o.low = true;
+    o.low = true, o.dual = false;
 #endif
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : ""; };
         if (a == "--layout") o.dual = std::string(next()) != "single";
         else if (a == "--res") sscanf(next(), "%dx%d", &o.width, &o.height);
+        else if (a == "--pad-position") pad_a = GAMEPAD_BUTTON_RIGHT_FACE_RIGHT, pad_b = GAMEPAD_BUTTON_RIGHT_FACE_DOWN;
         else if (a == "--low") o.low = true;
         else if (a == "--high") o.low = false;
         else if (a == "--rich") o.rich = true;
@@ -332,7 +343,7 @@ int main(int argc, char** argv) {
     auto loading = [&]() {
         auto card = [&](Rectangle r, const char* line) {
             DrawRectangleRec(r, Color{14, 19, 16, 255});
-            float k = r.height / 480.0f;
+            float k = ui_scale(r);
             const char* t = "RAPTOR SPRINT";
             ui_draw(t, r.x + r.width / 2 - ui_measure(t, 40 * k) / 2, r.y + r.height * 0.38f, 40 * k, Color{228, 234, 220, 255});
             ui_draw(line, r.x + r.width / 2 - ui_measure(line, 22 * k) / 2, r.y + r.height * 0.38f + 56 * k, 22 * k, Color{128, 150, 124, 255});
@@ -536,6 +547,7 @@ int main(int argc, char** argv) {
             hud.intro_title = TextFormat("%s   trail %d of %d   %s", region(race_r).name, race_k + 1, kLevelsPerRegion, difficulty_name(course.difficulty));
             if (race_k == 0) {
                 for (const char* line : region(race_r).news) hud.intro_lines.push_back(std::string("NEW  ") + line);
+                if (race_r == 0) hud.intro_lines.push_back("NEW  Sprint: R (uses breath)   Brake: Down");
                 hud.hold = !o.autoplay && !test_end;  // as long as it takes to read
             }
         } else {
@@ -974,12 +986,12 @@ int main(int argc, char** argv) {
         Matrix head = MatrixIdentity();
         bool in_race = screen == Screen::Race || screen == Screen::Paused || (screen == Screen::Settings && settings_from == Screen::Paused);
         bool on_title = screen == Screen::Title || (screen == Screen::Settings && settings_from == Screen::Title);
-        Stage stage = on_title ? title_stage(course, time) : Stage{};
+        Stage stage = on_title ? title_stage(course, time, o.dual ? 0.0f : (float)o.width / o.height) : Stage{};
         float dark = 0;
         Camera3D cam = in_race ? head_camera(player, time, set.bob * 0.5f, &head) : on_title ? stage.cam : title_camera(course, time, &dark);
         if (!in_race && outro.active) outro.stop();
         bool ending = in_race && hud.phase == Phase::Finished && outro.active;
-        if (ending) cam = outro.camera(cam, !o.dual);
+        if (ending) cam = outro.camera(cam, o.dual ? 0.0f : (float)o.width / o.height);
         if (on_title) {
             float k = RaptorShow::kScale;
             showcase.update(dt, Vector3Transform(cam.position, MatrixInvert(compose(MatrixScale(k, k, k), stage.frame))));
@@ -1049,7 +1061,7 @@ int main(int argc, char** argv) {
         } else {
             if (o.dual) {
                 DrawRectangleRec(top, Color{6, 9, 7, 120});
-                float k = top.height / 480.0f;
+                float k = ui_scale(top);
                 const char* p = "PAUSED";
                 ui_draw(p, top.width / 2 - ui_measure(p, 48 * k) / 2, top.height * 0.4f, 48 * k, Color{228, 234, 220, 255});
             } else {

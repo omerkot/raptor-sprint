@@ -16,9 +16,9 @@ public:
     void start(const Course& c, const Player& p, int region, int variant);
     void stop();
     void update(float dt);  // (plays its own sounds)
-    // The view: from `eyes` (first person) out to the shot. `right`: the raptor right of centre,
-    // leaving the left of the screen for the finish card.
-    Camera3D camera(const Camera3D& eyes, bool right) const;
+    // The view: from `eyes` (first person) out to the shot. `beside_card` is the screen's shape when
+    // the finish card is on the same screen (0 when it isn't): the raptor stands to the right of it.
+    Camera3D camera(const Camera3D& eyes, float beside_card) const;
     void draw(const Camera3D& cam);  // inside the 3D view, after the world
     void draw_dust(const Camera3D& cam, Rectangle view);  // over the finished view, before the HUD
 

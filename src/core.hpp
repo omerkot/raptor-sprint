@@ -51,6 +51,9 @@ float randf(float lo = 0.0f, float hi = 1.0f);
 const char* android_data_dir();  // the app's own storage
 #endif
 
+// Text and panels are sized for 640x480: by height, or by width on a screen narrower than that.
+inline float ui_scale(Rectangle r) { return std::min(r.height / 480.0f, r.width / 640.0f); }
+
 // Where the game's files are: assets/ next to the program (in the browser, the preloaded /assets;
 // on Android, inside the app), and the settings file (in the browser, /save, kept in the browser's
 // storage; on Android, the app's own storage).

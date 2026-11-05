@@ -7,13 +7,9 @@
 
 namespace rr {
 
-// The buttons labelled A and B. Most handheld systems report them by position, A on the east side;
-// Android reports them by label.
-#if defined(PLATFORM_ANDROID)
-constexpr GamepadButton kPadA = GAMEPAD_BUTTON_RIGHT_FACE_DOWN, kPadB = GAMEPAD_BUTTON_RIGHT_FACE_RIGHT;
-#else
-constexpr GamepadButton kPadA = GAMEPAD_BUTTON_RIGHT_FACE_RIGHT, kPadB = GAMEPAD_BUTTON_RIGHT_FACE_DOWN;
-#endif
+// The buttons labelled A and B, as the system reports them by label. With --pad-position, A is the
+// east button and B the south, which is what the launchers for direct installs set up.
+inline GamepadButton pad_a = GAMEPAD_BUTTON_RIGHT_FACE_DOWN, pad_b = GAMEPAD_BUTTON_RIGHT_FACE_RIGHT;
 
 enum class MenuInput { None, Up, Down, Left, Right, Confirm, Back, Pause };
 int active_pad();  // the pad in use, or -1

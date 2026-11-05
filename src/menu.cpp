@@ -64,8 +64,8 @@ MenuInput read_menu_input(float dt) {
     if (r_left.fire(left, dt)) in = MenuInput::Left;
     if (r_right.fire(right, dt)) in = MenuInput::Right;
     // A (east) chooses, B (south) goes back, Start pauses.
-    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_X) || hit(kPadA)) in = MenuInput::Confirm;
-    if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressed(KEY_Z) || hit(kPadB)) in = MenuInput::Back;
+    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_X) || hit(pad_a)) in = MenuInput::Confirm;
+    if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressed(KEY_Z) || hit(pad_b)) in = MenuInput::Back;
     if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_P) || hit(GAMEPAD_BUTTON_MIDDLE_RIGHT)) in = MenuInput::Pause;
     return in;
 }
@@ -113,7 +113,7 @@ static void draw_items(Rectangle r, const Menu& m, float k, float time) {
 }
 
 void draw_menu_panel(Rectangle r, const Menu& m, float time) {
-    float k = r.height / 480.0f;
+    float k = ui_scale(r);
     DrawRectangleRec(r, kBg);
     text(m.title, r.x + 28 * k, r.y + 16 * k, 28 * k, kValue);
     if (!m.subtitle.empty()) text(m.subtitle, r.x + 28 * k, r.y + 52 * k, 20 * k, kLabel);
@@ -122,7 +122,7 @@ void draw_menu_panel(Rectangle r, const Menu& m, float time) {
 }
 
 void draw_menu_overlay(Rectangle r, const Menu& m, float time, bool left) {
-    float k = r.height / 480.0f;
+    float k = ui_scale(r);
     if (!left) DrawRectangleRec(r, Color{6, 9, 7, 140});
     float h = 120 * k;
     for (const MenuItem& it : m.items) h += it.note.empty() ? 52 * k : 74 * k;
@@ -138,7 +138,7 @@ void draw_menu_overlay(Rectangle r, const Menu& m, float time, bool left) {
 }
 
 void draw_title(Rectangle r, float time, const char* prompt) {
-    float k = r.height / 480.0f;
+    float k = ui_scale(r);
     // A soft dark band behind the lettering, fading out at the edges.
     float cy = r.y + r.height * 0.17f;  // (high, clear of the raptor)
     // (A smooth curve, in strips of whole pixels: two straight fades meeting in the middle make a
@@ -162,7 +162,7 @@ void draw_title(Rectangle r, float time, const char* prompt) {
 }
 
 void draw_region_banner(Rectangle r, const Region& rg, int index, bool open) {
-    float k = r.height / 480.0f;
+    float k = ui_scale(r);
     float h = 226 * k, y = r.y + r.height - h;
     DrawRectangleGradientV((int)r.x, (int)(y - 60 * k), (int)r.width, (int)(60 * k), BLANK, Color{6, 9, 7, 200});
     DrawRectangleRec({r.x, y, r.width, h}, Color{6, 9, 7, 200});

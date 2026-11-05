@@ -165,7 +165,7 @@ void draw_claws(float x, float y, float size, int got) {
 }
 
 void draw_lower(Rectangle r, const Course& c, const Player& p, const Best& best, const HudState& h) {
-    float k = r.height / 480.0f;
+    float k = ui_scale(r);
     const float LBL = 20 * k;  // the smallest text anywhere
     DrawRectangleRec(r, kBg);
     Rectangle panel = {r.x + 14 * k, r.y + 14 * k, 300 * k, r.height - 28 * k};
@@ -216,7 +216,7 @@ void draw_lower(Rectangle r, const Course& c, const Player& p, const Best& best,
 }
 
 void draw_upper_overlay(Rectangle r, const Course& c, const Player& p, const Best& best, const HudState& h, bool compact) {
-    float k = r.height / 480.0f;
+    float k = ui_scale(r);
     const float LBL = 20 * k;
     char buf[48];
     auto edge_glow = [&](Color edge) {
@@ -282,7 +282,7 @@ void draw_upper_overlay(Rectangle r, const Course& c, const Player& p, const Bes
 }
 
 void draw_finish_card(Rectangle r, const Player& p, const Best& best, const HudState& h, float alpha, bool left) {
-    float k = r.height / 480.0f;
+    float k = ui_scale(r);
     const float LBL = 20 * k;
     auto fade = [&](Color c) { return Color{c.r, c.g, c.b, (unsigned char)(c.a * clampf(alpha, 0, 1))}; };
     float hh = (h.par > 0 ? (left ? 332 : 304) : 236) * k;
