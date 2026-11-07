@@ -269,6 +269,9 @@ void draw_upper_overlay(Rectangle r, const Course& c, const Player& p, const Bes
         if (card) {
             float hh = (56 + 34 * h.intro_lines.size() + (h.hold ? 40 : 0)) * k;
             Rectangle box = {r.x + r.width * 0.06f, r.y + r.height * 0.42f, r.width * 0.88f, hh};
+#if defined(__EMSCRIPTEN__)
+            if (r.height > r.width) box.x = r.x + r.width * 0.02f, box.width = r.width * 0.96f;  // (a phone held upright)
+#endif
             DrawRectangleRec(box, Color{10, 14, 11, 215});
             DrawRectangleRec({box.x, box.y, 5 * k, box.height}, kAmber);
             label(h.intro_title.c_str(), box.x + 20 * k, box.y + 12 * k, 26 * k, kAmber);
@@ -288,6 +291,9 @@ void draw_finish_card(Rectangle r, const Player& p, const Best& best, const HudS
     float hh = (h.par > 0 ? (left ? 332 : 304) : 236) * k;
     Rectangle card = left ? Rectangle{r.x + r.width * 0.03f, r.y + (r.height - hh) * 0.5f, r.width * 0.47f, hh}
                           : Rectangle{r.x + r.width * 0.1f, r.y + (r.height - hh) * 0.45f, r.width * 0.8f, hh};
+#if defined(__EMSCRIPTEN__)
+    if (!left) card.y = r.y + r.height - hh - 104 * k;  // (a phone held upright: low, above its buttons, with the raptor over it)
+#endif
     DrawRectangleRec(card, fade(Color{10, 14, 11, 222}));
     float cx = card.x + card.width / 2, y = card.y + 14 * k;
     label("FINISH", cx, y, 26 * k, fade(kAmber), 2);
@@ -317,7 +323,9 @@ void draw_finish_card(Rectangle r, const Player& p, const Best& best, const HudS
     y += 30 * k;
     std::string sub = !h.news.empty() ? h.news : h.new_best ? "New best time" : (best.total > 0 ? "Best " + format_time(best.total) : "");
     label(sub.c_str(), cx, y, 22 * k, fade((!h.news.empty() || h.new_best) ? kGood : kLabel), 2);
+#if !defined(__EMSCRIPTEN__)  // (on a phone these are buttons of their own)
     label(h.hint.c_str(), cx, card.y + card.height - 34 * k, LBL, fade(kLabel), 2);
+#endif
 }
 
 }  // namespace rr

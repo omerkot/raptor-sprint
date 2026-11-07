@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key><string>Raptor Sprint</string>
+	<key>CFBundleDisplayName</key><string>Raptor Sprint</string>
+	<key>CFBundleIdentifier</key><string>com.omerkot.raptorsprint</string>
+	<key>CFBundleExecutable</key><string>raptorsprint</string>
+	<key>CFBundleIconFile</key><string>icon</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleShortVersionString</key><string>@VERSION@</string>
+	<key>CFBundleVersion</key><string>@VERSION@</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>LSMinimumSystemVersion</key><string>12.0</string>
+	<key>LSApplicationCategoryType</key><string>public.app-category.action-games</string>
+	<key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>

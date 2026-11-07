@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Raptor Sprint</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e1310">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Raptor Sprint">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none; }
+body { position: fixed; inset: 0; color: #e4eadc; font: 800 18px/1.3 system-ui, sans-serif;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+canvas { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; touch-action: none; outline: none; }
+#safe { position: fixed; visibility: hidden; pointer-events: none;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.card { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; background: #0e1310; text-align: center; padding: 24px; box-sizing: border-box; }
+#load h1 { margin: 0; font-size: 34px; letter-spacing: .04em; }
+#bar { width: min(260px, 60vw); height: 6px; border-radius: 3px; background: #223; overflow: hidden; }
+#fill { width: 0; height: 100%; background: #ecba5c; transition: width .2s; }
+#note { color: #80967c; font-size: 16px; }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1"></canvas>
+<div id="safe"></div>
+<div id="load" class="card"><h1>RAPTOR SPRINT</h1><div id="bar"><div id="fill"></div></div><div id="note">Loading</div></div>
+<script>
+var canvas = document.getElementById('canvas');
+var coarse = matchMedia('(pointer: coarse)').matches;
+var params = new URLSearchParams(location.search);
+var ready = false, upright = innerHeight > innerWidth;
+
+// What the game asks for each frame: its size in pixels, how many of them make a point on the page,
+// and how far in the notch and the corners reach (top, right, bottom, left).
+function measure() {
+  var w = innerWidth, h = innerHeight;
+  if ((h > w) !== upright) {  // (turned: fingers come off, so a race pauses)
+    upright = h > w;
+    if (ready) Module._web_interrupted();
+  }
+  var scale = Math.min(window.devicePixelRatio || 1, 2);
+  scale = Math.min(scale, 2560 / Math.max(w, h));
+  Module.cssScale = scale;
+  Module.viewW = Math.round(w * scale);
+  Module.viewH = Math.round(h * scale);
+  var s = getComputedStyle(document.getElementById('safe'));
+  Module.safe = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'].map(function (k) { return (parseFloat(s[k]) || 0) * scale; });
+}
+
+var saving = false;
+function save() {
+  if (!ready || saving) return;
+  saving = true;
+  Module.FS.syncfs(false, function () { saving = false; });
+}
+
+function eachAudio(act) {
+  var m = window.miniaudio;
+  if (m && m.devices) m.devices.forEach(function (d) { if (d && d.webaudio) act(d.webaudio); });
+}
+
+var Module = {
+  canvas: canvas,
+  arguments: (params.get('args') || '').split(' ').filter(Boolean),
+  print: function (s) { console.log(s); },
+  printErr: function (s) { console.warn(s); },
+  preRun: [function () {
+    var FS = Module.FS;
+    FS.mkdir('/save');
+    FS.mount(Module.IDBFS, {}, '/save');
+    Module.addRunDependency('save');
+    FS.syncfs(true, function () { Module.removeRunDependency('save'); });
+  }],
+  onRuntimeInitialized: function () {
+    ready = true;
+    document.getElementById('note').textContent = 'Growing the forest';
+    document.getElementById('fill').style.width = '100%';
+    // (The game's first frames come after the slow part: painting textures, making sounds.)
+    var seen = 0;
+    (function wait() {
+      if (Module.lastFrame && ++seen > 2) return document.getElementById('load').remove();
+      requestAnimationFrame(wait);
+    })();
+  },
+  setStatus: function (text) {
+    var m = /\((\d+(?:\.\d+)?)\/(\d+)\)/.exec(text);
+    if (m) document.getElementById('fill').style.width = (90 * m[1] / m[2]) + '%';
+  }
+};
+measure();
+addEventListener('resize', measure);
+addEventListener('orientationchange', measure);
+if (window.visualViewport) visualViewport.addEventListener('resize', measure);
+
+// Every finger, whichever part of the screen it's on: the game decides what it means.
+function send(e, phase) {
+  if (!ready) return;
+  var r = canvas.getBoundingClientRect();
+  Module._touch_event(e.pointerId, phase, (e.clientX - r.left) * canvas.width / r.width, (e.clientY - r.top) * canvas.height / r.height);
+}
+canvas.addEventListener('pointerdown', function (e) {
+  e.preventDefault();
+  if (canvas.setPointerCapture) try { canvas.setPointerCapture(e.pointerId); } catch (x) {}
+  send(e, 0);
+});
+canvas.addEventListener('pointermove', function (e) { if (e.pointerType !== 'mouse' || e.buttons) send(e, 1); });
+canvas.addEventListener('pointerup', function (e) { send(e, 2); wake(); });
+canvas.addEventListener('pointercancel', function (e) { send(e, 3); });
+['touchstart', 'touchmove', 'gesturestart', 'dblclick', 'contextmenu'].forEach(function (n) {
+  document.addEventListener(n, function (e) { e.preventDefault(); }, { passive: false });
+});
+
+// A browser only lets sound start, the screen stay on and the page go full screen after a touch.
+var awake = false;
+function wake() {
+  eachAudio(function (a) { if (a.state !== 'running') a.resume(); });
+  if (awake) return;
+  awake = true;
+  var root = document.documentElement;
+  if (coarse && root.requestFullscreen) root.requestFullscreen({ navigationUI: 'hide' }).catch(function () {});
+  keepOn();
+}
+function keepOn() {
+  if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(function () {});
+}
+
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) {
+    if (ready) Module._web_interrupted();
+    eachAudio(function (a) { a.suspend(); });
+    save();
+  } else {
+    eachAudio(function (a) { a.resume(); });
+    if (awake) keepOn();
+  }
+});
+addEventListener('pagehide', save);
+setInterval(save, 4000);
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

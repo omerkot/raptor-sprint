@@ -1,6 +1,6 @@
 Changes to raylib in this repository
 
-The source code of raylib is not changed, and neither are the macOS and Android libraries.
+The source code of raylib is not changed, and neither are the macOS, Windows and Android libraries.
 
 In device/libraylib.a, the build folder path stored in the compiled file (used only in the
 messages of a few bundled headers) was replaced with a neutral path of the same length. Nothing

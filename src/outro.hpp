@@ -20,6 +20,7 @@ public:
     // the finish card is on the same screen (0 when it isn't): the raptor stands to the right of it.
     Camera3D camera(const Camera3D& eyes, float beside_card) const;
     void draw(const Camera3D& cam);  // inside the 3D view, after the world
+    void draw_casters();  // what casts a shadow (full only)
     void draw_dust(const Camera3D& cam, Rectangle view);  // over the finished view, before the HUD
 
     bool active = false;

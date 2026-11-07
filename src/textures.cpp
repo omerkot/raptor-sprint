@@ -151,7 +151,26 @@ Texture2D paint_path(int N) {
             cv.at(x, y) = k;
             cv.alpha(x, y) = e < rag ? 1.0f : 0.0f;
         }
-    for (int i = 0; i < N * 2; i++) {  // pebbles
+    // At the Mac's size, stones with a shape: lumpy outlines, lit from one side, sunk into the earth.
+    for (int i = 0; N > 512 && i < N; i++) {
+        float x = rnd(8, W - 8), y = rnd(8, H - 8), r = rnd(1.5f, 7.0f) * (rnd() < 0.08f ? 1.7f : 1.0f), seed = rnd(0, 100);
+        if (cv.alpha((int)x, (int)y) < 0.5f) continue;
+        float g = rnd(0.28f, 0.5f);
+        int R = (int)(r * 1.5f) + 2;
+        for (int py = (int)y - R; py <= (int)y + R; py++)
+            for (int px = (int)x - R; px <= (int)x + R; px++) {
+                if (px < 0 || py < 0 || px >= W || py >= H) continue;
+                float dx = px + 0.5f - x, dy = py + 0.5f - y, ang = std::atan2(dy, dx);
+                float edge = r * (1.0f + 0.22f * std::sin(ang * 3 + seed) + 0.12f * std::sin(ang * 5 + seed * 1.7f));
+                float d = std::sqrt(dx * dx + dy * dy) / edge;
+                if (d > 1.25f) continue;
+                Vector3& k = cv.at(px, py);
+                if (d > 1.0f) { k = mul3(k, 0.72f + 0.28f * smooth(1.0f, 1.25f, d)); continue; }  // (its shadow on the earth)
+                float lit = 0.72f + 0.5f * std::sqrt(1.0f - d * d) * (0.6f - 0.4f * (dx + dy) / (edge + 0.01f));
+                k = mix3(k, {g * lit, g * 0.95f * lit, g * 0.86f * lit}, smooth(1.0f, 0.82f, d));
+            }
+    }
+    for (int i = 0; N <= 512 && i < N * 2; i++) {  // pebbles
         float x = rnd(0, W), y = rnd(0, H), r = rnd(0.6f, 2.2f) * N / 512.0f + 0.4f;
         if (cv.alpha((int)x, (int)y) < 0.5f) continue;
         float g = rnd(0.35f, 0.6f);
@@ -238,6 +257,28 @@ Texture2D paint_fern(int N) {
 Texture2D paint_leaves(int N) {
     Canvas cv(N, N, {0.15f, 0.25f, 0.08f}, 0.0f);
     float s = N / 256.0f;
+    // At the Mac's size, a sprig rather than a disc: stems of separate leaves reaching out from the
+    // middle, with the light showing between them.
+    if (N > 256) {
+        for (int stem = 0; stem < 15; stem++) {
+            float ang = stem * 2.39996f + rnd(-0.3f, 0.3f), reach = N * rnd(0.26f, 0.46f), curl = rnd(-0.9f, 0.9f);
+            float x = N * 0.5f, y = N * 0.5f;
+            for (float d = 0; d < reach; d += 2.0f) {
+                x += std::cos(ang) * 2, y += std::sin(ang) * 2, ang += curl * 2 / reach;
+                stamp_disc(cv, x, y, 0.8f * s, {0.13f, 0.14f, 0.06f}, 1.0f);
+                if (rnd() < 0.34f) {
+                    float side = rnd() < 0.5f ? -1.0f : 1.0f, L = rnd(8, 15) * s * (1.05f - 0.5f * d / reach);
+                    float a = ang + side * rnd(0.5f, 1.15f);
+                    float lx = x + std::cos(a) * L * 0.9f, ly = y + std::sin(a) * L * 0.9f;
+                    int R = (int)(L + 2);
+                    if (lx < R || ly < R || lx > N - R || ly > N - R) continue;
+                    Vector3 c = mix3({0.10f, 0.21f, 0.05f}, {0.36f, 0.50f, 0.13f}, rnd());
+                    stamp_leaf(cv, lx, ly, L, L * 0.40f, a, c, 0.1f, 1.0f);
+                }
+            }
+        }
+        return upload(cv, false, true);
+    }
     for (int i = 0; i < (int)(420 * s * s); i++) {
         float ang = rnd(0, kTau), r = std::sqrt(rnd()) * N * 0.44f;
         float x = N * 0.5f + std::cos(ang) * r, y = N * 0.5f + std::sin(ang) * r;
@@ -457,22 +498,22 @@ Texture2D paint_sky(int W) {
 
 }  // namespace
 
-void Textures::paint(bool small) {
-    int k = small ? 2 : 1;
+void Textures::paint(bool small, bool large) {
+    int k = small ? 2 : 1, up = large ? 2 : 1;
     std::vector<Color> one = {WHITE};
     Image wimg = {one.data(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
     white = LoadTextureFromImage(wimg);
-    floor = paint_floor(512 / k);
-    path = paint_path(512 / k);
-    bark = paint_bark(512 / k);
-    rock = paint_rock(256 / k);
-    fern = paint_fern(256 / k);
-    leaves = paint_leaves(256 / k);
-    grass = paint_grass(256 / k);
+    floor = paint_floor(512 * up / k);
+    path = paint_path(512 * up / k);
+    bark = paint_bark(512 * up / k);
+    rock = paint_rock(256 * up / k);
+    fern = paint_fern(256 * up / k);
+    leaves = paint_leaves(256 * up / k);
+    grass = paint_grass(256 * up / k);
     dapple = paint_dapple(256 / k);
-    skin = paint_skin(256);
-    raptor = paint_raptor(512);
-    sky = paint_sky(512 / k);
+    skin = paint_skin(256 * up);
+    raptor = paint_raptor(512 * up);
+    sky = paint_sky(512 * up / k);
 }
 
 void Textures::unload() {

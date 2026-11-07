@@ -34,7 +34,7 @@ struct Roller {
 // out to `far`; ferns and grass (cut-out, the costliest to draw) out to `plants`; leaves out to
 // `canopy`. Everything sinks into the fog before `far`, so nothing is seen to start.
 struct DrawRange {
-    float far = 85, plants = 85, canopy = 85;
+    float far = 85, plants = 85, canopy = 85, grass = 85;  // (grass only counts when it's built of blades)
 };
 
 // Props for the end of a trail: a boulder resting on the ground at the origin (its top about
@@ -50,10 +50,13 @@ struct World {
     Mesh snout{}, teeth{};
     int drawn = 0, triangles = 0;  // last frame's counts (diagnostics)
 
-    void build(const Course& c, bool low);
+    bool fine = false;  // foliage built up from many small parts: leaf masses, blades of grass
+    void build(const Course& c, bool low, bool fine = false);
     // `fall` gives each obstacle's movement (a faller's angle, a roller's progress); `tint` the
     // region's colours.
     void draw(const Camera3D& cam, const DrawRange& range, const std::vector<float>& fall, const Biome& tint);
+    // What casts a shadow into the map centred `at`, reaching `radius` (full only).
+    void draw_casters(Vector3 at, float radius, int cascade, const std::vector<float>& fall);
     // The snout, attached to the head (basis: right, up, back, at the eye).
     void draw_snout(const Matrix& head);
     void unload();

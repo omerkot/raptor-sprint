@@ -2,7 +2,7 @@
 
 A first-person race through a prehistoric forest as a velociraptor, written in C++ with raylib for
 handhelds. It runs on the RG DS (both screens), the RG34XXSP and the XU Mini M, on Android handhelds
-such as the RG406H, and on a Mac.
+such as the RG406H, on a Mac and on Windows.
 
 | Two screens (RG DS) | One screen |
 |---|---|
@@ -53,6 +53,10 @@ Get the latest version from [Releases](https://github.com/omerkot/raptor-sprint/
 | `raptor-sprint-*-muos.zip` | RG34XXSP | Unzip into `ROMS/Ports` |
 | `raptor-sprint-*-android.apk` | Android 8 or later, 64-bit, with game buttons | Open the file on the device |
 | `raptor-sprint-*-mac.zip` | Mac (M1 or later) | Unzip and open `raptorsprint` |
+
+On the Mac and Windows the game has a picture of its own, drawn at the display's full resolution: sun shadows through the leaves, shafts of light in the fog, foliage that moves in the wind and fuller undergrowth. It fills the screen; Command-F or Settings > Display switches to a window of any size. The first time it runs it times itself and sets Detail as high as your Mac can hold its frame rate, which you can change in Settings. A controller works as well as the keyboard.
+
+On Windows it has the same picture. Unzip it anywhere you can write to, as saves go next to the program, and run `Raptor Sprint.exe`. F11 or Alt+Enter switches between full screen and a window. It isn't signed, so Windows may warn you the first time: choose More info, then Run anyway.
 
 The Mac version isn't signed, so the first time, right-click `raptorsprint`, choose Open, and confirm.
 

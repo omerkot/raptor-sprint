@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-#if defined(PLATFORM_ANDROID)
+#if defined(PLATFORM_ANDROID) || defined(__EMSCRIPTEN__)
 #include <GLES2/gl2.h>
 #endif
 
@@ -202,6 +202,17 @@ Mesh MeshBuilder::build() {
 
 // ------------------------------------------------------------------ shaders
 
+// Foliage moving in the wind: a slow swell over the forest, with quicker flutter on top.
+const char* const kSway = R"(
+vec3 sway(vec3 p, vec2 uv, vec2 wind, float t) {
+    float amount = wind.x + wind.y * (1.0 - uv.y);
+    float phase = dot(p.xz, vec2(0.37, 0.29));
+    float swell = 0.65 + 0.35 * sin(t * 0.6 + p.x * 0.045 + p.z * 0.03);
+    vec2 move = vec2(sin(t * 1.7 + phase) + 0.45 * sin(t * 3.9 + phase * 1.9), 0.7 * cos(t * 1.3 + phase * 1.3));
+    return p + vec3(move.x, 0.3 * move.y, move.y) * (amount * swell);
+}
+)";
+
 // Lighting, worked out per vertex (the handhelds are short of pixel power, not vertices): sky and
 // ground ambient, sunlight, and exponential fog that glows towards the sun. vLight holds how much
 // of each light falls on the front (xy) and back (zw); the pixels only add the dapple and the curve.
@@ -227,15 +238,23 @@ varying mediump vec3 vView;
 #endif
 varying highp vec2 vUV;
 varying highp vec2 vDap;
-varying vec4 vC;
-varying vec4 vFog;  // what the fog adds (rgb), how much of the scene shows through it (a)
-varying vec4 vLight;
-#ifdef CUTOUT
+CENTROID varying vec4 vC;
+CENTROID varying vec4 vFog;  // what the fog adds (rgb), how much of the scene shows through it (a)
+CENTROID varying vec4 vLight;
+#if defined(CUTOUT) || defined(FULL)
 varying highp vec3 vW;
 varying float vDist;
 #endif
+#if defined(CUTOUT) && defined(FULL)
+uniform vec2 wind;
+#endif
 void main() {
-    vec3 W = (matModel * vec4(vertexPosition, 1.0)).xyz;
+#if defined(CUTOUT) && defined(FULL)
+    vec3 P = sway(vertexPosition, vertexTexCoord, wind, time);
+#else
+#define P vertexPosition
+#endif
+    vec3 W = (matModel * vec4(P, 1.0)).xyz;
     vec3 N = normalize((matNormal * vec4(vertexNormal, 0.0)).xyz);
     vec3 d = W - camPos;
     float dist = length(d);
@@ -256,6 +275,8 @@ void main() {
     // Thin leaves let light through from behind.
     vLight.y += max(-nl, 0.0) * 0.45;
     vLight.w += max(nl, 0.0) * 0.45;
+#endif
+#if defined(CUTOUT) || defined(FULL)
     vW = W;
     vDist = dist;
 #endif
@@ -266,7 +287,7 @@ void main() {
     vDap = W.xz * 0.05 + vec2(time * 0.006, time * 0.004);
     vC = vertexColor * colDiffuse;
     vUV = vertexTexCoord;
-    gl_Position = mvp * vec4(vertexPosition, 1.0);
+    gl_Position = mvp * vec4(P, 1.0);
 }
 )";
 
@@ -274,15 +295,49 @@ void main() {
 static const char* LIGHTING = R"(
 varying highp vec2 vUV;
 varying highp vec2 vDap;
-varying vec4 vC;
-varying vec4 vFog;
-varying vec4 vLight;
+CENTROID varying vec4 vC;
+CENTROID varying vec4 vFog;
+CENTROID varying vec4 vLight;
 uniform sampler2D texture0;
 uniform sampler2D texture1;
 uniform mediump vec3 sunCol;
 uniform vec3 skyAmb;
 uniform vec3 groundAmb;
 uniform vec3 emissive;
+#ifdef FULL
+varying highp vec3 vW;
+varying float vDist;
+uniform sampler2DShadow shadowMap;
+uniform mat4 shadowVP[3];
+const float kTexel[3] = float[3](0.0146, 0.035, 0.084);  // metres per pixel of each map
+const vec2 kTaps[8] = vec2[8](vec2(-0.326, -0.406), vec2(0.962, -0.195), vec2(-0.203, 0.621), vec2(0.185, -0.893),
+                              vec2(-0.840, -0.074), vec2(0.473, -0.480), vec2(-0.696, 0.457), vec2(0.519, 0.767));
+// How much of the sun reaches this point: the nearest map that covers it, softened over a few pixels.
+// (`taps`: 8 for hard surfaces close by; a shadow on a leaf, or far off, needs no more than 4.)
+float sun_seen(vec3 N, float soft, int taps) {
+    float a = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    mat2 turn = mat2(cos(a), sin(a), -sin(a), cos(a));
+    for (int i = 0; i < 3; i++) {
+        vec3 p = vW + N * (kTexel[i] * 2.0);
+        vec3 q = (shadowVP[i] * vec4(p, 1.0)).xyz * 0.5 + 0.5;
+        if (all(greaterThan(q.xy, vec2(0.01))) && all(lessThan(q.xy, vec2(0.99)))) {
+            vec2 base = q.xy * 0.5 + vec2(float(i & 1), float(i >> 1)) * 0.5;
+            float sum = 0.0;
+            int n = i == 0 ? taps : taps / 2;
+            for (int k = 0; k < n; k++)
+                sum += texture(shadowMap, vec3(base + turn * kTaps[k] * (soft / 4096.0), q.z - 0.00012));
+            return sum / float(n);
+        }
+    }
+    return 0.6;  // (past the last map, the forest's usual share)
+}
+vec3 shade(vec3 albedo, vec2 light, float sheen, float seen) {
+    float through = mix(0.62, 1.16, textureLod(texture1, vDap, 0.0).r) * seen;
+    vec3 col = albedo * (mix(groundAmb, skyAmb, light.x) + sunCol * (light.y * through)) + emissive;
+    col += sunCol * (sheen * through);
+    return col * vFog.a + vFog.rgb;  // (the tone curve comes at the end, in gfx_full.cpp)
+}
+#else
 vec3 shade(vec3 albedo, vec2 light, float sheen) {
     float through = mix(0.10, 1.3, texture2D(texture1, vDap).r);
     vec3 col = albedo * (mix(groundAmb, skyAmb, light.x) + sunCol * (light.y * through)) + emissive;
@@ -292,10 +347,36 @@ vec3 shade(vec3 albedo, vec2 light, float sheen) {
     float l = dot(col, vec3(0.3, 0.59, 0.11));
     return mix(vec3(l), col, 0.86);
 }
+#endif
 )";
 
 static const char* LIT_FS = R"(
-#ifdef RICH
+#ifdef FULL
+varying vec3 vN;
+varying vec3 vView;
+uniform vec3 toSun;
+float height(vec2 uv) { return dot(texture(texture0, uv).rgb, vec3(0.33)); }
+void main() {
+    vec3 tex = texture(texture0, vUV).rgb;
+    float near = clamp(1.0 - vDist / 22.0, 0.0, 1.0);
+    // Close up, the same texture again at a finer scale, so the ground never turns to soft blobs.
+    float grain = height(vUV * 4.7) - dot(textureLod(texture0, vUV * 4.7, 7.0).rgb, vec3(0.33));
+    tex *= 1.0 + grain * near * 1.5;
+    // The texture's own light and dark, read as bumps, on axes that follow its coordinates.
+    vec3 Ng = normalize(vN), dx = dFdx(vW), dy = dFdy(vW);
+    vec2 ux = dFdx(vUV), uy = dFdy(vUV);
+    vec3 r1 = cross(dy, Ng), r2 = cross(Ng, dx);
+    vec3 T = r1 * ux.x + r2 * uy.x, B = r1 * ux.y + r2 * uy.y;
+    float size = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-12));
+    float h = dot(tex, vec3(0.33)), e = 0.0024;
+    vec3 N = normalize(Ng - (T * (height(vUV + vec2(e, 0.0)) - h) + B * (height(vUV + vec2(0.0, e)) - h)) * (size * 5.0 * (0.25 + near)));
+    float nl = dot(N, toSun);
+    vec2 light = vec2(N.y * 0.5 + 0.5, max((nl + 0.1) / 1.1, 0.0));
+    float glance = max(dot(N, normalize(toSun + normalize(vView))), 0.0);
+    float sheen = pow(glance, 34.0) * 0.22;
+    gl_FragColor = vec4(shade(tex * vC.rgb, light, sheen, sun_seen(Ng, 2.2, 8)), 1.0);
+}
+#elif defined(RICH)
 varying mediump vec3 vN;
 varying mediump vec3 vView;
 uniform mediump vec3 toSun;
@@ -322,9 +403,16 @@ void main() {
 
 static const char* CUT_FS = R"(
 uniform vec2 fade;  // distance where the layer starts thinning out, and where it's gone
+#ifndef FULL
 varying highp vec3 vW;
 varying float vDist;
+#endif
 void main() {
+#ifdef FULL
+    // (Read before anything is discarded: a texture's level of detail comes from neighbouring
+    // pixels, and read after, it can return nonsense.)
+    vec4 t = texture2D(texture0, vUV);
+#endif
     // Past its draw distance a layer thins out, a clump at a time, instead of stopping at a line.
     // (Clumps fixed in the world: a pattern fixed to the screen shimmers as the view moves.)
     float keep = clamp((fade.y - vDist) / (fade.y - fade.x), 0.0, 1.0);
@@ -333,8 +421,15 @@ void main() {
         p3 += dot(p3, p3.zyx + 31.32);
         if (keep <= fract((p3.x + p3.y) * p3.z)) discard;
     }
+#ifndef FULL
     vec4 t = texture2D(texture0, vUV);
-#ifdef RICH
+#endif
+#ifdef FULL
+    if (t.a < 0.2) discard;
+    // (Thin leaves: a shadow falling on them is softer than on the ground.)
+    float seen = mix(0.28, 1.0, sun_seen(vec3(0.0, 1.0, 0.0), 3.0, 4));
+    gl_FragColor = vec4(shade(t.rgb * vC.rgb, gl_FrontFacing ? vLight.xy : vLight.zw, 0.0, seen), clamp((t.a - 0.3) * 3.0, 0.0, 1.0));
+#elif defined(RICH)
     // Soft edges: the alpha becomes coverage across the multisamples.
     if (t.a < 0.25) discard;
     gl_FragColor = vec4(shade(t.rgb * vC.rgb, gl_FrontFacing ? vLight.xy : vLight.zw, 0.0), clamp((t.a - 0.35) * 3.3, 0.0, 1.0));
@@ -448,9 +543,13 @@ void main() {
     float s = max(dot(d, -sunDir), 0.0);
     col += sunCol * (pow(s, 600.0) * 2.0 + pow(s, 6.0) * 0.25);
     col = mix(fogCol + sunCol * pow(s, 5.0) * 0.22, col, smoothstep(0.0, 0.35, d.y));
+#ifdef FULL
+    gl_FragColor = vec4(col, 1.0);
+#else
     col = vec3(1.0) - exp(-col * 1.25);
     float l = dot(col, vec3(0.3, 0.59, 0.11));
     gl_FragColor = vec4(mix(vec3(l), col, 0.86), 1.0);
+#endif
 }
 )";
 
@@ -468,10 +567,10 @@ static std::string fs_src(const char* body, bool gles, bool fast = false) {
                    "#version 100\n#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump "
                    "float;\n#endif\n") +
                body;
-    return std::string(
-               "#version 330\n#define varying in\n#define texture2D texture\nout vec4 fragOut;\n#define gl_FragColor "
-               "fragOut\n") +
-           body;
+    // (Names starting gl_ are the language's own, and not every compiler lets one be redefined.)
+    std::string s = body;
+    for (size_t at = s.find("gl_FragColor"); at != std::string::npos; at = s.find("gl_FragColor", at)) s.replace(at, 12, "fragOut");
+    return std::string("#version 330\n#define varying in\n#define texture2D texture\nout vec4 fragOut;\n") + s;
 }
 
 // ------------------------------------------------------------------ Gfx
@@ -485,7 +584,7 @@ static void setup_lit(Shader& s, int idx, const Vector3& sun_dir, const Vector3&
     gfx.loc_time[idx] = GetShaderLocation(s, "time");
     gfx.loc_reach[idx] = GetShaderLocation(s, "reach");
     gfx.loc_emissive[idx] = GetShaderLocation(s, "emissive");
-    if (idx == 1) gfx.loc_fade = GetShaderLocation(s, "fade");
+    if (idx == 1) gfx.loc_fade = GetShaderLocation(s, "fade"), gfx.loc_wind = GetShaderLocation(s, "wind");
     SetShaderValue(s, GetShaderLocation(s, "sunDir"), &sun_dir, SHADER_UNIFORM_VEC3);
     SetShaderValue(s, GetShaderLocation(s, "sunCol"), &sun_col, SHADER_UNIFORM_VEC3);
     SetShaderValue(s, GetShaderLocation(s, "skyAmb"), &sky_amb, SHADER_UNIFORM_VEC3);
@@ -497,17 +596,25 @@ static void setup_lit(Shader& s, int idx, const Vector3& sun_dir, const Vector3&
     if (loc_to_sun >= 0) SetShaderValue(s, loc_to_sun, &to_sun, SHADER_UNIFORM_VEC3);
 }
 
-void Gfx::init(bool gles, bool small_textures, bool rich) {
+void Gfx::init(bool gles, bool small_textures, bool rich, bool full) {
     this->gles = gles;
     this->rich = rich;
+    this->full = full;
     std::string tier = rich ? "#define RICH\n" : "";
+    // (Multisampling reads a triangle's edge pixels from their centres, which can lie outside it,
+    // where a colour worked out at the corners runs away: centroid keeps them inside.)
+    tier += full ? "#define FULL\n#define CENTROID centroid\n" : "#define CENTROID\n";
     std::string lit_vs = tier + LIT_VS, lit_fs = tier + LIGHTING + LIT_FS, cut_fs = tier + LIGHTING + CUT_FS;
-    std::string cut_vs = tier + "#define CUTOUT\n" + LIT_VS;
+    std::string cut_vs = tier + "#define CUTOUT\n" + (full ? kSway : "") + LIT_VS;
+    std::string sky_fs = tier + SKY_FS;
     lit = LoadShaderFromMemory(vs_src(lit_vs.c_str(), gles).c_str(), fs_src(lit_fs.c_str(), gles, true).c_str());
     cut = LoadShaderFromMemory(vs_src(cut_vs.c_str(), gles).c_str(), fs_src(cut_fs.c_str(), gles, true).c_str());
-    sky = LoadShaderFromMemory(vs_src(SKY_VS, gles).c_str(), fs_src(SKY_FS, gles).c_str());
-    tex.paint(small_textures);
-    if (rich) {
+    sky = LoadShaderFromMemory(vs_src(SKY_VS, gles).c_str(), fs_src(sky_fs.c_str(), gles).c_str());
+    tex.paint(small_textures, full);
+    if (full) {
+        // Sharp ground right out to the horizon, however shallow the angle.
+        for (Texture2D t : {tex.floor, tex.path, tex.bark, tex.rock, tex.fern, tex.grass, tex.leaves}) SetTextureFilter(t, TEXTURE_FILTER_ANISOTROPIC_16X);
+    } else if (rich) {
         // Sharp ground right out to the horizon, however shallow the angle.
         for (Texture2D t : {tex.floor, tex.path, tex.bark, tex.rock, tex.fern, tex.grass, tex.leaves}) SetTextureFilter(t, TEXTURE_FILTER_ANISOTROPIC_8X);
         auto post = [&](const char* fs) { return LoadShaderFromMemory(vs_src(POST_VS, gles).c_str(), fs_src(fs, gles).c_str()); };
@@ -527,6 +634,7 @@ void Gfx::init(bool gles, bool small_textures, bool rich) {
     sky_mat = LoadMaterialDefault();
     sky_mat.shader = sky;
     sky_mat.maps[MATERIAL_MAP_DIFFUSE].texture = tex.sky;
+    if (full) full_init();
 
     MeshBuilder sb;
     sb.sphere(300.0f, 600.0f, 24, 12, MatrixIdentity(), WHITE);
@@ -535,7 +643,11 @@ void Gfx::init(bool gles, bool small_textures, bool rich) {
 
 void Gfx::set_environment(const Biome& b) {
     sun_dir = Vector3Negate(Vector3Normalize(b.to_sun));
+    // With real shadows a low sun never reaches the forest floor: lift it so it falls through the
+    // canopy. (Without them its height only colours the sky and the fog.)
+    if (full) sun_dir = Vector3Negate(Vector3Normalize({b.to_sun.x, std::min(b.to_sun.y * 2.3f, 1.1f), b.to_sun.z}));
     fog_col = b.fog;
+    if (full) full_environment(b);
     setup_lit(lit, 0, sun_dir, b.sun_col, b.sky_amb, b.ground_amb, b.fog, b.fog_density);
     setup_lit(cut, 1, sun_dir, b.sun_col, b.sky_amb, b.ground_amb, b.fog, b.fog_density);
     SetShaderValue(sky, GetShaderLocation(sky, "sunDir"), &sun_dir, SHADER_UNIFORM_VEC3);
@@ -544,6 +656,7 @@ void Gfx::set_environment(const Biome& b) {
 }
 
 void Gfx::begin_frame(const Camera3D& cam, float time, float reach) {
+    if (full) full_frame(time);
     for (int i = 0; i < 2; i++) {
         Shader& s = i ? cut : lit;
         SetShaderValue(s, loc_cam[i], &cam.position, SHADER_UNIFORM_VEC3);
@@ -562,28 +675,33 @@ void Gfx::draw_sky(const Camera3D& cam) {
 }
 
 void Gfx::draw(const Mesh& mesh, const Matrix& m, Texture2D t, Color tint, Vector3 emissive) {
+    if (casting) return cast(mesh, m);
     SetShaderValue(lit, loc_emissive[0], &emissive, SHADER_UNIFORM_VEC3);
     lit_mat.maps[MATERIAL_MAP_DIFFUSE].texture = t;
     lit_mat.maps[MATERIAL_MAP_DIFFUSE].color = tint;
     DrawMesh(mesh, lit_mat, m);
 }
 
-void Gfx::draw_cut(const Mesh& mesh, const Matrix& m, Texture2D t, Color tint, float fade_to) {
+void Gfx::draw_cut(const Mesh& mesh, const Matrix& m, Texture2D t, Color tint, float fade_to, Vector2 wind) {
+    if (casting) return cast_cut_mesh(mesh, m, t, wind);
     Vector3 none = {0, 0, 0};
+    if (full) SetShaderValue(cut, loc_wind, &wind, SHADER_UNIFORM_VEC2);
     SetShaderValue(cut, loc_emissive[1], &none, SHADER_UNIFORM_VEC3);
     Vector2 fade = {fade_to * 0.7f, fade_to};
     SetShaderValue(cut, loc_fade, &fade, SHADER_UNIFORM_VEC2);
     cut_mat.maps[MATERIAL_MAP_DIFFUSE].texture = t;
     cut_mat.maps[MATERIAL_MAP_DIFFUSE].color = tint;
     rlDisableBackfaceCulling();
-#if defined(PLATFORM_ANDROID)
+    if (full) cut_begin();
+#if defined(PLATFORM_ANDROID) || defined(__EMSCRIPTEN__)
     if (rich) glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 #endif
     DrawMesh(mesh, cut_mat, m);
     rlDrawRenderBatchActive();
-#if defined(PLATFORM_ANDROID)
+#if defined(PLATFORM_ANDROID) || defined(__EMSCRIPTEN__)
     if (rich) glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 #endif
+    if (full) cut_end();
     rlEnableBackfaceCulling();
 }
 
@@ -624,7 +742,8 @@ void Gfx::post_draw(Texture2D view, Rectangle to) {
 }
 
 void Gfx::unload() {
-    if (rich) {
+    if (full) full_unload();
+    if (rich && !full) {
         for (Shader s : {bright, radial, blur, merge, finish}) UnloadShader(s);
         for (RenderTexture2D& t : low_)
             if (t.id) UnloadRenderTexture(t);

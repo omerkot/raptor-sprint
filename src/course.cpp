@@ -431,6 +431,10 @@ void Course::generate(int seed_, float len, int region_, int difficulty_) {
                 if (lrng() < 0.8f) put(PlantKind::Grass, -0.3f, 2.5f, 0.4f, 0.8f, -0.5f);
                 if (lrng() < 0.5f) put(PlantKind::Fern, 7.0f, 22.0f, 1.0f, 1.9f, 0.5f);
                 if (lrng() < 0.15f) put(PlantKind::Bush, 3.0f, 26.0f, 1.2f, 2.6f, 1.0f);
+                if (!lusher) continue;
+                for (int g = 0; g < 3; g++) put(PlantKind::Grass, -0.35f, 3.0f, 0.3f, 0.7f, -0.55f);
+                if (lrng() < 0.9f) put(PlantKind::Grass, 2.0f, 16.0f, 0.4f, 0.8f, 0.2f);
+                if (lrng() < 0.6f) put(PlantKind::Fern, 0.4f, 9.0f, 0.6f, 1.4f, 0.0f);
             }
         }
     }

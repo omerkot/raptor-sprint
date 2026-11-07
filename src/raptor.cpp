@@ -677,11 +677,13 @@ void RaptorShow::draw(const Matrix& stage) {
     Vector3 near = Vector3Scale(Vector3Normalize(Vector3Subtract(cam_, {pos_.x, base_, pos_.y})), 0.3f);
     Matrix sm = compose(compose(compose(xform({0, 0.03f, -0.15f}, {0, 0, 0}, {0.55f * s, 1, 1.35f * s}), root), MatrixTranslate(near.x, near.y, near.z)), to_world);
     shadow_mat_.maps[MATERIAL_MAP_DIFFUSE].color = Color{255, 255, 255, (unsigned char)(255 * s)};
-    rlDisableDepthMask();
-    rlColorMask(true, true, true, false);  // (its alpha mustn't reach the view's, or the shadow turns see-through)
-    DrawMesh(shadow_, shadow_mat_, sm);
-    rlColorMask(true, true, true, true);
-    rlEnableDepthMask();
+    if (!gfx.full) {  // (there the sun casts a real one)
+        rlDisableDepthMask();
+        rlColorMask(true, true, true, false);  // (its alpha mustn't reach the view's, or the shadow turns see-through)
+        DrawMesh(shadow_, shadow_mat_, sm);
+        rlColorMask(true, true, true, true);
+        rlEnableDepthMask();
+    }
     gfx.draw(mesh_, compose(root, to_world), gfx.tex.raptor, WHITE, {0.02f, 0.016f, 0.01f});
 }
 

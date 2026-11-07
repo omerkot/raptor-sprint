@@ -1,10 +1,13 @@
 // Shared helpers. Y up, -Z forward, right-handed; rotations in
 // xform() are angles applied Z, then X, then Y.
 #pragma once
+#include <sys/stat.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -52,17 +55,38 @@ const char* android_data_dir();  // the app's own storage
 #endif
 
 // Text and panels are sized for 640x480: by height, or by width on a screen narrower than that.
-inline float ui_scale(Rectangle r) { return std::min(r.height / 480.0f, r.width / 640.0f); }
+// (A phone held upright is narrow enough to need text a little larger for its width.)
+#if defined(__EMSCRIPTEN__)
+inline float ui_design_width = 640.0f;
+#else
+constexpr float ui_design_width = 640.0f;
+#endif
+inline float ui_scale(Rectangle r) { return std::min(r.height / 480.0f, r.width / ui_design_width); }
+
+// Run as a Mac app, rather than a program in a folder. (The system may run a downloaded app from a
+// read-only copy, so nothing can be saved inside it.)
+inline bool in_mac_app() {
+#if defined(__APPLE__)
+    static const bool yes = std::string(GetApplicationDirectory()).find(".app/Contents/MacOS") != std::string::npos;
+    return yes;
+#else
+    return false;
+#endif
+}
 
 // Where the game's files are: assets/ next to the program (in the browser, the preloaded /assets;
-// on Android, inside the app), and the settings file (in the browser, /save, kept in the browser's
-// storage; on Android, the app's own storage).
+// on Android and in a Mac app, inside the app), and the settings file (in the browser, /save, kept
+// in the browser's storage; on Android, the app's own storage; in a Mac app, the user's Application
+// Support folder).
 inline std::string asset_path(const char* rel) {
 #if defined(__EMSCRIPTEN__)
     return std::string("/assets/") + rel;
 #elif defined(PLATFORM_ANDROID)
     return rel;
 #else
+#if defined(__APPLE__)
+    if (in_mac_app()) return std::string(GetApplicationDirectory()) + "../Resources/assets/" + rel;
+#endif
     return std::string(GetApplicationDirectory()) + "assets/" + rel;
 #endif
 }
@@ -72,6 +96,16 @@ inline std::string save_path(const char* name) {
 #elif defined(PLATFORM_ANDROID)
     return std::string(android_data_dir()) + "/" + name;
 #else
+#if defined(__APPLE__)
+    if (in_mac_app()) {
+        static const std::string dir = [] {
+            std::string d = std::string(getenv("HOME") ? getenv("HOME") : "") + "/Library/Application Support/Raptor Sprint/";
+            mkdir(d.c_str(), 0755);
+            return d;
+        }();
+        return dir + name;
+    }
+#endif
     return std::string(GetApplicationDirectory()) + name;
 #endif
 }

@@ -69,6 +69,93 @@ void tube(MeshBuilder& mb, const std::vector<Vector3>& c, const std::vector<floa
         }
 }
 
+bool g_fine = false;  // (World::fine, while building)
+
+// A mass of leaves: many small cards scattered over the surface of an ellipsoid, facing outwards at
+// odd angles. Their normals point away from the middle, so the whole mass lights as one soft form,
+// and the gaps between them let the sun through.
+void add_foliage(MeshBuilder& mb, Vector3 c, Vector3 size, int cards, float card, float shade) {
+    for (int i = 0; i < cards; i++) {
+        float a = rnd(0, kTau), y = rnd(-0.6f, 1.0f), flat = std::sqrt(std::max(0.0f, 1.0f - y * y)), depth = rnd(0.55f, 1.0f);
+        Vector3 dir = {flat * std::cos(a), y, flat * std::sin(a)};
+        Vector3 at = {c.x + dir.x * size.x * depth, c.y + dir.y * size.y * depth, c.z + dir.z * size.z * depth};
+        Vector3 n = Vector3Normalize({dir.x + rnd(-0.8f, 0.8f), dir.y + rnd(-0.4f, 0.8f), dir.z + rnd(-0.8f, 0.8f)});
+        Vector3 u = Vector3Normalize(Vector3CrossProduct(n, {0.3f, 1, 0.2f})), v = Vector3CrossProduct(n, u);
+        float spin = rnd(0, kTau), s = card * rnd(0.75f, 1.3f);
+        Vector3 du = Vector3Scale(Vector3Add(Vector3Scale(u, std::cos(spin)), Vector3Scale(v, std::sin(spin))), s);
+        Vector3 dv = Vector3Scale(Vector3Add(Vector3Scale(u, -std::sin(spin)), Vector3Scale(v, std::cos(spin))), s);
+        Vector3 q[4] = {at - du - dv, at + du - dv, at + du + dv, at - du + dv};
+        Vector3 nn[4];
+        Color k[4];
+        for (int j = 0; j < 4; j++) {
+            Vector3 d = {(q[j].x - c.x) / size.x, (q[j].y - c.y) / size.y, (q[j].z - c.z) / size.z};
+            nn[j] = Vector3Normalize(Vector3Add(d, {0, 0.35f, 0}));
+            // Darker low down and towards the middle, where little light gets in.
+            float lit = clampf(0.5f + 0.5f * d.y, 0, 1) * 0.5f + 0.5f * clampf(Vector3Length(d), 0, 1);
+            k[j] = scale_col(WHITE, shade * lerpf(0.42f, 1.05f, lit));
+        }
+        mb.vtri(q[0], q[1], q[2], nn[0], nn[1], nn[2], k[0], k[1], k[2], {0, 1}, {1, 1}, {1, 0});
+        mb.vtri(q[0], q[2], q[3], nn[0], nn[2], nn[3], k[0], k[2], k[3], {0, 1}, {1, 0}, {0, 0});
+    }
+}
+
+// A tuft of real blades: each a tapering, bending strip, dark at the root and light at the tip.
+void add_blades(MeshBuilder& mb, Vector3 at, float w, float h, int blades) {
+    for (int i = 0; i < blades; i++) {
+        float a = rnd(0, kTau), r = std::sqrt(rnd()) * w * 0.5f, yaw = rnd(0, kTau), len = h * rnd(0.55f, 1.25f), bend = len * rnd(0.15f, 0.65f);
+        Vector3 root = {at.x + std::cos(a) * r, at.y - 0.03f, at.z + std::sin(a) * r};
+        Vector3 out = {std::cos(yaw), 0, std::sin(yaw)}, side = {-std::sin(yaw), 0, std::cos(yaw)};
+        float half = rnd(0.010f, 0.019f) * (0.6f + h);
+        float g = rnd(0.62f, 1.05f), warm = rnd(0.0f, 0.3f);
+        Color dark = rgb(0.13f * g, 0.20f * g, 0.08f * g), tip = rgb((0.42f + warm) * g, (0.56f + warm * 0.4f) * g, 0.20f * g);
+        Vector3 p[4], nrm = Vector3Normalize(Vector3Add({0, 1, 0}, Vector3Scale(out, 0.5f)));
+        Color col[4];
+        float v[4];
+        for (int s = 0; s < 4; s++) {
+            float t = s / 3.0f;
+            p[s] = Vector3Add(Vector3Add(root, {0, len * (t - 0.12f * t * t), 0}), Vector3Scale(out, bend * t * t));
+            col[s] = rgb(lerpf(dark.r, tip.r, t) / 255.0f, lerpf(dark.g, tip.g, t) / 255.0f, lerpf(dark.b, tip.b, t) / 255.0f);
+            v[s] = 1.0f - t;
+        }
+        for (int s = 0; s < 3; s++) {
+            float w0 = half * (1.0f - s / 3.0f * 0.75f), w1 = s == 2 ? 0.0f : half * (1.0f - (s + 1) / 3.0f * 0.75f);
+            Vector3 a0 = Vector3Add(p[s], Vector3Scale(side, -w0)), b0 = Vector3Add(p[s], Vector3Scale(side, w0));
+            Vector3 a1 = Vector3Add(p[s + 1], Vector3Scale(side, -w1)), b1 = Vector3Add(p[s + 1], Vector3Scale(side, w1));
+            mb.vtri(a0, b0, b1, nrm, nrm, nrm, col[s], col[s], col[s + 1], {0.5f, v[s]}, {0.5f, v[s]}, {0.5f, v[s + 1]});
+            if (s < 2) mb.vtri(a0, b1, a1, nrm, nrm, nrm, col[s], col[s + 1], col[s + 1], {0.5f, v[s]}, {0.5f, v[s + 1]}, {0.5f, v[s + 1]});
+        }
+    }
+}
+
+// A fern with arching fronds, each several sections long.
+void add_fine_fern(MeshBuilder& mb, const Plant& p, bool plain) {
+    int fronds = plain ? 6 : 9;
+    Color base = scale_col(WHITE, rnd(0.75f, 1.05f));
+    for (int i = 0; i < fronds; i++) {
+        float a = p.yaw + kTau * i / fronds + rnd(-0.3f, 0.3f);
+        float len = p.size * rnd(0.8f, 1.2f), w = len * 0.5f, rise = rnd(0.55f, 0.95f), droop = rnd(0.55f, 0.95f);
+        Vector3 out = {std::cos(a), 0, std::sin(a)}, side = {-std::sin(a), 0, std::cos(a)};
+        const int S = plain ? 3 : 5;
+        Vector3 left[6], right[6], nrm[6];
+        Color col[6];
+        for (int s = 0; s <= S; s++) {
+            float t = (float)s / S;
+            Vector3 c = Vector3Add(p.p, Vector3Add(Vector3Scale(out, len * t), {0, len * rise * (t - droop * t * t), 0}));
+            float hw = w * 0.5f * (0.22f + 0.78f * std::sin(kPi * std::min(1.0f, 0.12f + t * 0.88f)));
+            left[s] = Vector3Add(c, Vector3Scale(side, -hw));
+            right[s] = Vector3Add(c, Vector3Scale(side, hw));
+            float slope = rise * (1.0f - 2.0f * droop * t);
+            nrm[s] = Vector3Normalize(Vector3Add({0, 1, 0}, Vector3Scale(out, -slope)));
+            col[s] = scale_col(base, lerpf(0.55f, 1.05f, std::min(1.0f, t * 1.6f)));
+        }
+        for (int s = 0; s < S; s++) {
+            float v0 = 1.0f - (float)s / S, v1 = 1.0f - (float)(s + 1) / S;
+            mb.vtri(left[s], right[s], right[s + 1], nrm[s], nrm[s], nrm[s + 1], col[s], col[s], col[s + 1], {0, v0}, {1, v0}, {1, v1});
+            mb.vtri(left[s], right[s + 1], left[s + 1], nrm[s], nrm[s + 1], nrm[s + 1], col[s], col[s + 1], col[s + 1], {0, v0}, {1, v1}, {0, v1});
+        }
+    }
+}
+
 void add_tree(MeshBuilder& bark, MeshBuilder& leaves, const Course& co, const Tree& t, bool low) {
     // A slightly leaning, tapering trunk with a flared base.
     float lean_x = rnd(-0.03f, 0.03f), lean_z = rnd(-0.03f, 0.03f);
@@ -79,7 +166,11 @@ void add_tree(MeshBuilder& bark, MeshBuilder& leaves, const Course& co, const Tr
     float back = near.dist - near.half;
     int row = !low ? 0 : back < kFrontLine ? 0 : back < kSecondLine ? 1 : 2;
     static const std::vector<float> kRings[3] = {{0.0f, 0.6f, 3.5f, 1.0f}, {0.0f, 2.5f, 1.0f}, {0.0f, 1.0f}};  // (the last is the top)
-    std::vector<float> hs = low ? kRings[row] : std::vector<float>{0.0f, 0.35f, 0.9f, 2.5f, 6.0f, 11.0f, t.h};
+    // (Fine trunks take their detail from how near the trail they stand, too.)
+    int fine_row = back < kFrontLine ? 0 : back < kSecondLine ? 1 : 2;
+    static const std::vector<float> kFineRings[3] = {{0.0f, 0.12f, 0.35f, 0.6f, 0.9f, 1.5f, 2.5f, 4.0f, 6.0f, 8.5f, 11.0f, 15.0f, 1.0f},
+                                                     {0.0f, 0.35f, 0.9f, 2.5f, 6.0f, 11.0f, 1.0f}, {0.0f, 0.6f, 3.5f, 1.0f}};
+    std::vector<float> hs = low ? kRings[row] : g_fine ? kFineRings[fine_row] : std::vector<float>{0.0f, 0.35f, 0.9f, 2.5f, 6.0f, 11.0f, t.h};
     hs.back() = t.h;
     std::vector<Vector3> c;
     std::vector<float> r;
@@ -91,7 +182,7 @@ void add_tree(MeshBuilder& bark, MeshBuilder& leaves, const Course& co, const Tr
     }
     float moss_dir = rnd(0, kTau), shade = rnd(0.8f, 1.1f);
     Vector3 base = t.p;
-    tube(bark, c, r, !low ? 8 : row == 0 ? 6 : row == 1 ? 5 : 4,
+    tube(bark, c, r, g_fine ? (fine_row == 0 ? 14 : fine_row == 1 ? 8 : 6) : !low ? 8 : row == 0 ? 6 : row == 1 ? 5 : 4,
          [&](Vector3 p, Vector3 n) {
              float y = p.y - base.y;
              if (row == 2) return scale_col(WHITE, shade * 0.85f);  // (one span, base to top: no room for moss)
@@ -102,6 +193,21 @@ void add_tree(MeshBuilder& bark, MeshBuilder& leaves, const Course& co, const Tr
              return rgb(k.x * ao, k.y * ao, k.z * ao);
          },
          false);
+    if (g_fine) {
+        // A crown of boughs, each a flattened mass of leaves on a limb, wider lower down. (Trees
+        // further from the trail need fewer: they're only ever seen through the others.)
+        float keep = back < kFrontLine ? 1.0f : back < kSecondLine ? 0.55f : 0.3f;
+        int boughs = keep < 0.5f ? 4 : 6;
+        for (int i = 0; i < boughs; i++) {
+            float f = (i + 0.5f) / boughs, y = t.h * lerpf(0.55f, 1.0f, f), a = rnd(0, kTau);
+            float reach = lerpf(4.6f, 1.8f, f) * rnd(0.8f, 1.25f);
+            Vector3 trunk = {t.p.x + lean_x * y, t.p.y + y, t.p.z + lean_z * y};
+            Vector3 tip = {trunk.x + std::cos(a) * reach, trunk.y + rnd(-0.3f, 1.0f), trunk.z + std::sin(a) * reach};
+            if (keep == 1.0f) tube(bark, {trunk, Vector3Lerp(trunk, tip, 0.5f), tip}, {t.r * 0.3f, t.r * 0.16f, 0.03f}, 5, [&](Vector3, Vector3) { return scale_col(WHITE, shade * 0.8f); }, false);
+            add_foliage(leaves, Vector3Lerp(trunk, tip, 0.72f), {reach * 0.75f, 0.6f + reach * 0.2f, reach * 0.75f}, (int)(20 * keep), 1.05f, shade * 0.95f);
+        }
+        return;
+    }
     // Canopy: a few big leaf sprays high up, mostly out of view but casting the light.
     int sprays = !low ? 4 : row == 2 ? 1 : 2;
     for (int i = 0; i < sprays; i++) {
@@ -708,7 +814,8 @@ Mesh make_dead_tree(float r, float len, bool low) {
     return make_faller(0, o, low).trunk;
 }
 
-void World::build(const Course& co, bool low) {
+void World::build(const Course& co, bool low, bool fine_parts) {
+    fine = g_fine = fine_parts;
     course = &co;
     int npts = (int)co.pts.size();
     int nchunks = (npts + CHUNK - 1) / CHUNK;
@@ -876,14 +983,34 @@ void World::build(const Course& co, bool low) {
             }
     }
 
+    // Plants away from the trail are plainer. (It's settled by where they stand, not how far off the
+    // camera is, so nothing changes as it comes near.)
+    auto off_trail = [&](const Plant& p) {
+        Nearest n = co.nearest(p.p, p.idx, 30);
+        return n.dist - n.half > 5.0f;
+    };
     for (const Plant& p : co.plants) {
         switch (p.kind) {
-            case PlantKind::Fern: add_fern(B(p.idx, Chunk::Fern), p, low); break;
-            case PlantKind::Grass: add_card_cluster(B(p.idx, Chunk::Grass), p.p, p.size * 1.4f, p.size * 0.7f, 3, p.yaw, 0.7f); break;
-            case PlantKind::Bush: add_card_cluster(B(p.idx, Chunk::Leaves), {p.p.x, p.p.y - 0.2f, p.p.z}, p.size * 1.3f, p.size, 4, p.yaw, 0.55f); break;
+            case PlantKind::Fern:
+                if (g_fine) add_fine_fern(B(p.idx, Chunk::Fern), p, off_trail(p));
+                else add_fern(B(p.idx, Chunk::Fern), p, low);
+                break;
+            case PlantKind::Grass:
+                if (g_fine) add_blades(B(p.idx, Chunk::Grass), p.p, p.size * 1.5f, p.size * 0.72f, off_trail(p) ? 8 : 18);
+                else add_card_cluster(B(p.idx, Chunk::Grass), p.p, p.size * 1.4f, p.size * 0.7f, 3, p.yaw, 0.7f);
+                break;
+            case PlantKind::Bush:
+                if (g_fine) add_foliage(B(p.idx, Chunk::Leaves), {p.p.x, p.p.y + p.size * 0.38f, p.p.z}, {p.size * 0.72f, p.size * 0.5f, p.size * 0.72f}, 40, 0.2f + p.size * 0.14f, rnd(0.8f, 1.05f));
+                else add_card_cluster(B(p.idx, Chunk::Leaves), {p.p.x, p.p.y - 0.2f, p.p.z}, p.size * 1.3f, p.size, 4, p.yaw, 0.55f);
+                break;
         }
     }
 
+    if (fine) {
+        int sum[Chunk::LayerCount] = {};
+        for (size_t i = 0; i < mb.size(); i++) sum[i % Chunk::LayerCount] += (int)mb[i].vertex_count() / 3;
+        TraceLog(LOG_INFO, "triangles: terrain %d, trail %d, bark %d, rock %d, fern %d, leaves %d, grass %d, water %d", sum[0], sum[1], sum[2], sum[3], sum[4], sum[5], sum[6], sum[7]);
+    }
     for (int ch = 0; ch < nchunks; ch++) {
         Chunk& C = chunks[ch];
         int i0 = ch * CHUNK, i1 = std::min(npts - 1, i0 + CHUNK);
@@ -965,6 +1092,9 @@ void World::build(const Course& co, bool low) {
     teeth = tm.build();
 }
 
+// How far each kind of foliage moves in the wind (full only): all over, and towards its tip.
+static constexpr Vector2 kLeafWind = {0.035f, 0.0f}, kFernWind = {0.0f, 0.075f}, kGrassWind = {0.0f, 0.10f};
+
 void World::draw(const Camera3D& cam, const DrawRange& range, const std::vector<float>& fall, const Biome& tint) {
     drawn = 0;
     triangles = 0;
@@ -1013,12 +1143,13 @@ void World::draw(const Camera3D& cam, const DrawRange& range, const std::vector<
     for (size_t n = 0; n < vis.size(); n++) {
         Chunk& c = chunks[vis[n]];
         Matrix id = MatrixIdentity();
-        bool plants = along[n] <= range.plants, canopy = along[n] <= range.canopy;
+        bool plants = along[n] <= range.plants, canopy = along[n] <= range.canopy, grass = plants && (!fine || along[n] <= range.grass);
         if (c.has[Chunk::Trail]) gfx.draw_cut(c.mesh[Chunk::Trail], id, t.path);
-        if (plants && c.has[Chunk::Fern]) gfx.draw_cut(c.mesh[Chunk::Fern], id, t.fern, tint.leaves, range.plants);
-        if (plants && c.has[Chunk::Grass]) gfx.draw_cut(c.mesh[Chunk::Grass], id, t.grass, tint.leaves, range.plants);
-        if (canopy && c.has[Chunk::Leaves]) gfx.draw_cut(c.mesh[Chunk::Leaves], id, t.leaves, tint.leaves, range.canopy);
-        if (!plants) triangles -= (c.has[Chunk::Fern] ? c.mesh[Chunk::Fern].triangleCount : 0) + (c.has[Chunk::Grass] ? c.mesh[Chunk::Grass].triangleCount : 0);
+        if (plants && c.has[Chunk::Fern]) gfx.draw_cut(c.mesh[Chunk::Fern], id, t.fern, tint.leaves, range.plants, kFernWind);
+        if (grass && c.has[Chunk::Grass]) gfx.draw_cut(c.mesh[Chunk::Grass], id, fine ? t.white : t.grass, tint.leaves, fine ? range.grass : range.plants, kGrassWind);
+        if (canopy && c.has[Chunk::Leaves]) gfx.draw_cut(c.mesh[Chunk::Leaves], id, t.leaves, tint.leaves, range.canopy, kLeafWind);
+        if (!plants && c.has[Chunk::Fern]) triangles -= c.mesh[Chunk::Fern].triangleCount;
+        if (!grass && c.has[Chunk::Grass]) triangles -= c.mesh[Chunk::Grass].triangleCount;
         if (!canopy && c.has[Chunk::Leaves]) triangles -= c.mesh[Chunk::Leaves].triangleCount;
     }
     // Falling trees: pivot at the base towards `axis`, settling half sunk once down.
@@ -1042,6 +1173,32 @@ void World::draw(const Camera3D& cam, const DrawRange& range, const std::vector<
         triangles += r.rock.triangleCount;
     }
     drawn = (int)vis.size();
+}
+
+void World::draw_casters(Vector3 at, float radius, int cascade, const std::vector<float>& fall) {
+    const Textures& t = gfx.tex;
+    Matrix id = MatrixIdentity();
+    for (Chunk& c : chunks) {
+        if (Vector3Distance(c.center, at) > radius + c.radius) continue;
+        if (c.has[Chunk::Bark]) gfx.draw(c.mesh[Chunk::Bark], id, t.bark);
+        if (c.has[Chunk::Rock]) gfx.draw(c.mesh[Chunk::Rock], id, t.rock);
+        if (c.has[Chunk::Leaves]) gfx.draw_cut(c.mesh[Chunk::Leaves], id, t.leaves, WHITE, 1e4f, kLeafWind);
+        if (cascade < 1 && c.has[Chunk::Fern]) gfx.draw_cut(c.mesh[Chunk::Fern], id, t.fern, WHITE, 1e4f, kFernWind);
+        if (cascade < 1 && c.has[Chunk::Grass]) gfx.draw_cut(c.mesh[Chunk::Grass], id, t.white, WHITE, 1e4f, kGrassWind);
+    }
+    for (const Faller& f : fallers) {
+        if (Vector3Distance(f.base, at) > radius + 16.0f) continue;
+        float th = f.obstacle < (int)fall.size() ? fall[f.obstacle] : 0.0f;
+        Vector3 k = Vector3Normalize(Vector3CrossProduct({0, 1, 0}, f.axis));
+        gfx.draw(f.trunk, compose(MatrixRotate(k, th), MatrixTranslate(f.base.x, f.base.y + f.lift * std::sin(th), f.base.z)), t.bark);
+    }
+    for (const Roller& r : rollers) {
+        const Obstacle& o = course->obstacles[r.obstacle];
+        float along = r.obstacle < (int)fall.size() ? fall[r.obstacle] : 0.0f;
+        Vector3 p = course->roller_at(o, along);
+        if (Vector3Distance(p, at) > radius) continue;
+        gfx.draw(r.rock, compose(MatrixRotate(Vector3CrossProduct({0, 1, 0}, o.axis), o.len * along / o.r), MatrixTranslate(p.x, p.y, p.z)), t.rock);
+    }
 }
 
 void World::draw_snout(const Matrix& head) {

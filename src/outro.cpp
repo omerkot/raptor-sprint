@@ -412,6 +412,18 @@ void Outro::build_bits() {
     UpdateMeshBuffer(leaves_[turn_], 3, lc_.data(), (int)lc_.size(), 0);
 }
 
+void Outro::draw_casters() {
+    if (!active) return;
+    if (boulder_.vboId) gfx.draw(boulder_, MatrixTranslate(boulder_at_.x, boulder_at_.y, boulder_at_.z), gfx.tex.rock);
+    if (tree_.vboId) {
+        float th = kPi * 0.5f * clampf((t - tree_t0_) / 0.95f, 0, 1);
+        th *= clampf((t - tree_t0_) / 0.95f, 0, 1);
+        Vector3 k = Vector3Normalize(Vector3CrossProduct(kUp, tree_axis_));
+        gfx.draw(tree_, compose(MatrixRotate(k, th), MatrixTranslate(tree_base_.x, tree_base_.y + tree_lift_ * std::sin(th), tree_base_.z)), gfx.tex.bark);
+    }
+    raptor_.draw(frame_);
+}
+
 void Outro::draw(const Camera3D& cam) {
     if (!active) return;
     const Biome& b = region(region_).biome;

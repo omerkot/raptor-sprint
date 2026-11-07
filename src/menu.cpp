@@ -4,6 +4,7 @@
 
 #include "hud.hpp"
 #include "ui.hpp"
+#include "web.hpp"
 
 namespace rr {
 
@@ -67,6 +68,9 @@ MenuInput read_menu_input(float dt) {
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_X) || hit(pad_a)) in = MenuInput::Confirm;
     if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressed(KEY_Z) || hit(pad_b)) in = MenuInput::Back;
     if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_P) || hit(GAMEPAD_BUTTON_MIDDLE_RIGHT)) in = MenuInput::Pause;
+#if defined(__EMSCRIPTEN__)
+    if (touch_menu_input() != MenuInput::None) in = touch_menu_input();
+#endif
     return in;
 }
 
@@ -83,6 +87,9 @@ static void draw_items(Rectangle r, const Menu& m, float k, float time) {
     int notes = 0;
     for (const MenuItem& it : m.items) notes += !it.note.empty();
     float row = std::min(52 * k, (r.height - notes * 22 * k) / std::max<size_t>(1, m.items.size())), y = r.y;
+#if defined(__EMSCRIPTEN__)
+    touch_menu_clear();
+#endif
     for (int i = 0; i < (int)m.items.size(); i++) {
         const MenuItem& it = m.items[i];
         bool on = i == m.sel;
@@ -93,21 +100,30 @@ static void draw_items(Rectangle r, const Menu& m, float k, float time) {
             DrawRectangleRec({r.x, y, 4 * k, h - 6 * k}, Color{kAmber.r, kAmber.g, kAmber.b, (unsigned char)(255 * pulse)});
         }
         float ty = y + 10 * k;
+        [[maybe_unused]] float less = 0, more = 0;  // (where the < and > are, for a tap)
         Color dim = {80, 92, 78, 255};
         text(it.label, r.x + 18 * k, ty, 23 * k, it.locked ? dim : on ? kValue : kLabel);
         if (!it.note.empty()) text(it.note, r.x + 18 * k, ty + 28 * k, 18 * k, kLabel);
         if (!it.value.empty()) {
             float vx = r.x + r.width - 16 * k;
+#if defined(__EMSCRIPTEN__)
+            bool arrows = it.arrows;  // (on every row: a tap on one needs no selecting first, and a locked region can still be left)
+#else
             bool arrows = on && it.arrows && !it.locked;
+#endif
             if (arrows) {
                 text(">", vx, ty, 23 * k, kAmber, 1);
+                more = vx - 6 * k;
                 vx -= 24 * k;
             }
             text(it.value, vx, ty + 1 * k, 21 * k, it.locked ? dim : on ? kAmber : kValue, 1);
             float vw = ui_measure(it.value.c_str(), 21 * k);
-            if (arrows) text("<", vx - vw - 10 * k, ty, 23 * k, kAmber, 1);
+            if (arrows) text("<", vx - vw - 10 * k, ty, 23 * k, kAmber, 1), less = vx - vw - 16 * k;
             if (it.claws >= 0) draw_claws(vx - vw - 64 * k, ty + 2 * k, 20 * k, it.claws);
         }
+#if defined(__EMSCRIPTEN__)
+        touch_menu_row({r.x, y, r.width, h}, less, more);
+#endif
         y += h;
     }
 }
@@ -118,7 +134,9 @@ void draw_menu_panel(Rectangle r, const Menu& m, float time) {
     text(m.title, r.x + 28 * k, r.y + 16 * k, 28 * k, kValue);
     if (!m.subtitle.empty()) text(m.subtitle, r.x + 28 * k, r.y + 52 * k, 20 * k, kLabel);
     draw_items({r.x + 14 * k, r.y + 86 * k, r.width - 28 * k, r.height - 130 * k}, m, k, time);
+#if !defined(__EMSCRIPTEN__)
     if (!m.hint.empty()) text(m.hint, r.x + r.width / 2, r.y + r.height - 34 * k, 20 * k, kLabel, 2);
+#endif
 }
 
 void draw_menu_overlay(Rectangle r, const Menu& m, float time, bool left) {
@@ -129,11 +147,19 @@ void draw_menu_overlay(Rectangle r, const Menu& m, float time, bool left) {
     h = std::min(h, r.height - 8 * k);
     Rectangle box = left ? Rectangle{r.x + r.width * 0.04f, r.y + (r.height - h) / 2, r.width * 0.5f, h}
                          : Rectangle{r.x + r.width * 0.12f, r.y + (r.height - h) / 2, r.width * 0.76f, h};
+#if defined(__EMSCRIPTEN__)
+    if (r.height > r.width) {  // (a phone held upright: the width of it, and on the title low down, clear of the raptor)
+        box.x = r.x + r.width * 0.03f, box.width = r.width * 0.94f;
+        if (left) box.y = r.y + r.height - h - 16 * k;
+    }
+#endif
     DrawRectangleRec(box, Color{kBg.r, kBg.g, kBg.b, 235});
     text(m.title, box.x + 20 * k, box.y + 14 * k, 26 * k, kValue);
     if (!m.subtitle.empty()) text(m.subtitle, box.x + 20 * k, box.y + 46 * k, 18 * k, kLabel);
     draw_items({box.x + 8 * k, box.y + 76 * k, box.width - 16 * k, h - 110 * k}, m, k, time);
+#if !defined(__EMSCRIPTEN__)  // (it names buttons a phone doesn't have)
     if (!m.hint.empty()) text(m.hint, box.x + box.width / 2, box.y + h - 30 * k, 18 * k, kLabel, 2);
+#endif
     (void)kPanel;
 }
 

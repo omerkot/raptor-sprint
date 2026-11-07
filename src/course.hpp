@@ -96,6 +96,7 @@ struct Course {
     int region = 0;  // which obstacles appear (regions.hpp)
     int difficulty = 0;
     bool lush = false;  // twice the undergrowth, for GPUs that can take it (set before generating)
+    bool lusher = false;  // and more again, mostly along the trail
 
     void generate(int seed, float length, int region = 0, int difficulty = 0);
     // Where a rolling boulder has got to, `t` 0..1 of the way along its path (its centre).
