@@ -28,6 +28,8 @@ export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 
 $GPTOKEYB2 "raptorsprint" > /dev/null 2>&1 &
 pm_platform_helper "$GAMEDIR/$BINARY"
-./$BINARY --res "${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}"
+# Knulli reports the pad by position, not by label, so A is the east button there.
+[ "$CFW_NAME" = "knulli" ] && PAD_ARGS="--pad-position"
+./$BINARY --res "${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}" $PAD_ARGS
 
 pm_finish

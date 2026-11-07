@@ -186,7 +186,7 @@ enum ItemId {
     J_REGION = 30, J_LEVEL, J_BACK = J_LEVEL + kLevelsPerRegion,
     W_REGION = 40, W_LENGTH, W_RUN, W_BACK,
     ENDINGS = 5, E_REGION = 50, E_LEVEL, E_BACK = E_LEVEL + kLevelsPerRegion,  // the endings test
-    FX = 10, FOREST, SPRINT, BOB, FPS, DETAIL, DISPLAY, BACK,
+    FX = 10, FOREST, SPRINT, BOB, FPS, DETAIL, DISPLAY, BACK, SWAP_AB,
     RESUME = 20, RESTART, PAUSE_SETTINGS, TO_TITLE, PAUSE_EXIT,
     STEERING = 60, ST_SPEED, ST_TRAVEL, ST_CURVE, ST_DEAD, ST_SMOOTH, ST_RESET, ST_BACK,  // (the touch stick, in the browser)
 };
@@ -510,6 +510,7 @@ int main(int argc, char** argv) {
     Settings set;
     std::string set_path = save_path("settings.cfg");
     set.load(set_path);
+    if (set.swap_ab) std::swap(pad_a, pad_b);
     if (!o.mute) audio.init();
 #if defined(PLATFORM_ANDROID)
     if (!o.mute) raylib_on_cmd = GetAndroidApp()->onAppCmd, GetAndroidApp()->onAppCmd = on_app_cmd;
@@ -779,6 +780,8 @@ int main(int argc, char** argv) {
             if (o.full) m.items.insert(m.items.end() - 1, {DISPLAY, "Display", set.fullscreen ? "Full screen" : "Window", ""});
 #if defined(__EMSCRIPTEN__)
             m.items.insert(m.items.end() - 1, {STEERING, "Steering", "", ""});
+#else
+            m.items.insert(m.items.begin() + 3, {SWAP_AB, "Swap A and B", set.swap_ab ? "On" : "Off", ""});
 #endif
             m.sel = sel_settings;
 #if defined(__EMSCRIPTEN__)
@@ -837,6 +840,10 @@ int main(int argc, char** argv) {
         else if (id == FX) set.fx = along(set.fx, 10);
         else if (id == FOREST) set.forest = along(set.forest, 10);
         else if (id == SPRINT) set.sprint_toggle = dir > 0;
+        else if (id == SWAP_AB) {
+            if (set.swap_ab != (dir > 0)) std::swap(pad_a, pad_b);
+            set.swap_ab = dir > 0;
+        }
         else if (id == BOB) set.bob = along(set.bob, 2);
         else if (id == FPS) set.show_fps = dir > 0;
         else if (id == DETAIL) set.detail = std::clamp(set.detail - dir, 0, 2), make_view();

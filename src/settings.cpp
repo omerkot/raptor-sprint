@@ -16,6 +16,7 @@ void Settings::load(const std::string& path) {
         if (k == "fx") fx = (int)clampf(v, 0, 10);
         else if (k == "forest") forest = (int)clampf(v, 0, 10);
         else if (k == "sprint_toggle") sprint_toggle = v != 0;
+        else if (k == "swap_ab") swap_ab = v != 0;
         else if (k == "bob") bob = (int)clampf(v, 0, 2);
         else if (k == "show_fps") show_fps = v != 0;
         else if (k == "detail") detail = (int)clampf(v, -1, 2);
@@ -35,7 +36,7 @@ void Settings::load(const std::string& path) {
 
 void Settings::save(const std::string& path) const {
     std::ofstream out(path);
-    out << "fx=" << fx << "\nforest=" << forest << "\nsprint_toggle=" << sprint_toggle << "\nbob=" << bob << "\nshow_fps=" << show_fps << "\ndetail=" << detail << "\nfullscreen=" << fullscreen
+    out << "fx=" << fx << "\nforest=" << forest << "\nsprint_toggle=" << sprint_toggle << "\nswap_ab=" << swap_ab << "\nbob=" << bob << "\nshow_fps=" << show_fps << "\ndetail=" << detail << "\nfullscreen=" << fullscreen
         << "\nwild_region=" << wild_region << "\nlength=" << length << "\ndifficulty=" << difficulty << "\n";
 #if defined(__EMSCRIPTEN__)
     out << "steer_speed=" << steer_speed << "\nsteer_travel=" << steer_travel << "\nsteer_curve=" << steer_curve << "\nsteer_dead=" << steer_dead

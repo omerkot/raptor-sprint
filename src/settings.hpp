@@ -7,6 +7,7 @@ namespace rr {
 struct Settings {
     int fx = 8, forest = 6;      // volumes, 0..10
     bool sprint_toggle = false;  // R toggles sprint instead of holding it
+    bool swap_ab = false;        // for a device where A and B come out the wrong way round
     int bob = 2;                 // head bob: 0 off, 1 reduced, 2 full
     bool show_fps = false;
     int detail = -1;             // view resolution: 0 high, 1 medium, 2 low (-1: pick for the device)

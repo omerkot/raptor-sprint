@@ -17,6 +17,8 @@ On a two-screen device this version plays on one screen.
 | Down | Brake |
 | Start | Pause |
 
+If A and B come out the wrong way round on your device, turn on Swap A and B in Settings.
+
 ## Compile
 
 raylib and the SDL2 headers are in the repository, so only a compiler is needed.
