@@ -21,7 +21,7 @@ GAME="$PORT/$NAME"
 rm -rf "$OUT"
 mkdir -p "$GAME/licenses"
 cp "$ROOT/packaging/portmaster/port.json" "$ROOT/packaging/portmaster/gameinfo.xml" "$ROOT/packaging/portmaster/README.md" \
-	"$ROOT/packaging/portmaster/screenshot.png" "$PORT/"
+	"$ROOT/packaging/portmaster/screenshot.png" "$ROOT/packaging/portmaster/cover.png" "$PORT/"
 cp "$ROOT/packaging/portmaster/Raptor Sprint.sh" "$PORT/$TITLE.sh"
 if [ "$NAME" != raptorsprint ]; then
 	sed -i.bak -e "s/raptorsprint/$NAME/g" -e "s/Raptor Sprint/$TITLE/g" "$PORT/port.json" "$PORT/gameinfo.xml" "$PORT/README.md"
@@ -40,7 +40,7 @@ STAGE="$OUT/zip"
 mkdir -p "$STAGE"
 cp -R "$GAME" "$STAGE/$NAME"
 cp "$PORT/$TITLE.sh" "$STAGE/"
-cp "$PORT/port.json" "$PORT/gameinfo.xml" "$PORT/screenshot.png" "$STAGE/$NAME/"
+cp "$PORT/port.json" "$PORT/gameinfo.xml" "$PORT/screenshot.png" "$PORT/cover.png" "$STAGE/$NAME/"
 cp "$PORT/README.md" "$STAGE/$NAME/$NAME.md"
 (cd "$STAGE" && zip -qry "$OUT/$NAME.zip" "$TITLE.sh" "$NAME" -x "*.DS_Store")
 rm -rf "$STAGE"

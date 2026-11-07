@@ -52,7 +52,8 @@ Get the latest version from [Releases](https://github.com/omerkot/raptor-sprint/
 | `raptor-sprint-*-rocknix.zip` | RG DS, XU Mini M | Unzip into `roms/ports` |
 | `raptor-sprint-*-muos.zip` | RG34XXSP | Unzip into `ROMS/Ports` |
 | `raptor-sprint-*-android.apk` | Android 8 or later, 64-bit, with game buttons | Open the file on the device |
-| `raptor-sprint-*-mac.zip` | Mac (M1 or later) | Unzip and open `raptorsprint` |
+| `raptor-sprint-*-mac.zip` | Mac (M1 or later) | Unzip and open `Raptor Sprint` |
+| `raptor-sprint-*-windows.zip` | Windows, 64-bit | Unzip and run `Raptor Sprint.exe` |
 
 On the Mac and Windows the game has a picture of its own, drawn at the display's full resolution: sun shadows through the leaves, shafts of light in the fog, foliage that moves in the wind and fuller undergrowth. It fills the screen; Command-F or Settings > Display switches to a window of any size. The first time it runs it times itself and sets Detail as high as your Mac can hold its frame rate, which you can change in Settings. A controller works as well as the keyboard.
 

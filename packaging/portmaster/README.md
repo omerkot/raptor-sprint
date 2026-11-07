@@ -25,7 +25,7 @@ raylib and the SDL2 headers are in the repository, so only a compiler is needed.
 
 ```bash
 apt-get install g++-aarch64-linux-gnu
-git clone https://github.com/omerkot/raptor-sprint.git
+git clone --branch v1.1.3 --depth 1 https://github.com/omerkot/raptor-sprint.git
 cd raptor-sprint
 CROSS=aarch64-linux-gnu- scripts/build.sh device
 ```
