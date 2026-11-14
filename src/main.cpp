@@ -395,13 +395,21 @@ int main(int argc, char** argv) {
     win_w = win_h = 0;  // the whole screen
 #endif
     if (o.full && !o.sized) win_w = 1024, win_h = 640;  // (it goes on to fill the screen, unless told not to)
+    // The window can change size under the game, and the view follows it: on the Mac and Windows,
+    // and on a handheld with one screen in a desktop (Handtop's labwc opens every window maximized,
+    // then the launcher makes it full screen, which can happen while the game is still loading).
+#if defined(PLATFORM_DESKTOP_SDL)
+    const bool follow_window = o.full || !o.dual;
+#else
+    const bool follow_window = o.full;
+#endif
 #if defined(__EMSCRIPTEN__)
     o.width = win_w = web_view_width(), o.height = win_h = web_view_height();
     o.upright = win_h > win_w;
     ui_design_width = o.upright ? 560.0f : 640.0f;
     SetConfigFlags(0);  // (the view has multisampling of its own, and the page does the resizing)
 #else
-    SetConfigFlags((o.uncapped ? 0 : FLAG_VSYNC_HINT) | (o.full ? FLAG_WINDOW_RESIZABLE : o.low ? 0 : FLAG_MSAA_4X_HINT));
+    SetConfigFlags((o.uncapped ? 0 : FLAG_VSYNC_HINT) | (follow_window ? FLAG_WINDOW_RESIZABLE : 0) | (o.full || o.low ? 0 : FLAG_MSAA_4X_HINT));
 #endif
     SetTraceLogLevel(o.diag ? LOG_INFO : LOG_WARNING);
     InitWindow(win_w, win_h, "Raptor Sprint");
@@ -906,23 +914,29 @@ int main(int argc, char** argv) {
                 else settle_detail = false, set.save(set_path);
             }
         }
-        if (o.full) {
-            bool toggle_keys = ((IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER)) && IsKeyPressed(KEY_F)) || IsKeyPressed(KEY_F11) ||
-                               ((IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)) && IsKeyPressed(KEY_ENTER));
-            if (toggle_keys) set_display(!set.fullscreen), set.save(set_path);
+        if (follow_window) {
+            if (o.full) {
+                bool toggle_keys = ((IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER)) && IsKeyPressed(KEY_F)) || IsKeyPressed(KEY_F11) ||
+                                   ((IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)) && IsKeyPressed(KEY_ENTER));
+                if (toggle_keys) set_display(!set.fullscreen), set.save(set_path);
+            }
             // However the window changed (dragged, zoomed, the system's full screen), follow it.
             static int drawn_w = 0;
             if (GetScreenWidth() != o.width || GetScreenHeight() != o.height || GetRenderWidth() != drawn_w) {
                 o.width = GetScreenWidth(), o.height = GetScreenHeight(), drawn_w = GetRenderWidth();
                 top = {0, 0, (float)o.width, (float)o.height};
                 make_view();
-                // (It can also change from outside: the green button, the View menu, or the system
-                // itself. The menu follows it, but only Settings and Command-F change what's saved.)
-                bool whole = is_full_screen();
-                if (!o.sized) set.fullscreen = whole;
-                if (whole) HideCursor();  // (nothing here uses the mouse)
-                else ShowCursor();
-                if (o.diag) printf("[window] %dx%d, drawn at %dx%d, %s\n", o.width, o.height, rw, rh, whole ? "full screen" : "a window");
+                if (o.full) {
+                    // (It can also change from outside: the green button, the View menu, or the system
+                    // itself. The menu follows it, but only Settings and Command-F change what's saved.)
+                    bool whole = is_full_screen();
+                    if (!o.sized) set.fullscreen = whole;
+                    if (whole) HideCursor();  // (nothing here uses the mouse)
+                    else ShowCursor();
+                    if (o.diag) printf("[window] %dx%d, drawn at %dx%d, %s\n", o.width, o.height, rw, rh, whole ? "full screen" : "a window");
+                } else if (o.diag) {
+                    printf("[window] %dx%d, drawn at %dx%d\n", o.width, o.height, rw, rh);
+                }
             }
         }
         float dt = capture ? 1.0f / 60.0f : std::min(GetFrameTime(), 1.0f / 20.0f);
