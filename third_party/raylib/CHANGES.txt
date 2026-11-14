@@ -1,11 +1,24 @@
 Changes to raylib in this repository
 
-The source code of raylib is not changed, and neither are the macOS, Windows and Android libraries.
+The macOS, Windows and Android libraries are raylib 5.5 as released. The handheld library,
+device/libraylib.a, is raylib 5.5 with one source file changed, and built as below.
 
-In device/libraylib.a, the build folder path stored in the compiled file (used only in the
-messages of a few bundled headers) was replaced with a neutral path of the same length. Nothing
-else in the file was changed.
+src/platforms/rcore_desktop_sdl.c is changed so that pads plugged in after start-up, or
+unplugged and plugged in again, keep working (device-pads.patch, applied to raylib 5.5). raylib
+5.5 files a pad's button and axis events under SDL's instance id, which grows each time a pad
+comes back, instead of under the slot it opened the pad in, and takes the removal event's
+instance id for a slot. On Handtop the virtual pad comes and goes with gamepad mode, so after
+leaving it once the game heard nothing from the pad. With the change each pad is found by its
+instance id in the slots, a new pad goes in the first free slot, and a pad that goes away is
+closed and its buttons and sticks let go.
 
-Also in device/libraylib.a, raudio.c was compiled with -DMA_NO_PULSEAUDIO, so sound goes straight
-to ALSA. Handhelds that run PipeWire can fail to open a playback device through its PulseAudio
-layer. The source file itself is unchanged.
+device/libraylib.a was rebuilt with that change on 2026-11-14 with raylib's own Makefile, in an
+aarch64 Debian bookworm container (GCC 12):
+
+    make PLATFORM=PLATFORM_DESKTOP_SDL GRAPHICS=GRAPHICS_API_OPENGL_ES2 \
+         SDL_INCLUDE_PATH=<this repository>/third_party/sdl2/include \
+         CUSTOM_CFLAGS="-DMA_NO_PULSEAUDIO -O2"
+
+-DMA_NO_PULSEAUDIO leaves out miniaudio's PulseAudio backend, so sound goes straight to ALSA:
+handhelds that run PipeWire can fail to open a playback device through its PulseAudio layer.
+The library has no build folder path in it (the bundled headers are named relative to src/).

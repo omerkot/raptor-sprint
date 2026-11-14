@@ -1,0 +1,126 @@
+--- a/src/platforms/rcore_desktop_sdl.c
++++ b/src/platforms/rcore_desktop_sdl.c
+@@ -1304,8 +1304,27 @@
+ #endif
+ 
+     for (int i = CORE.Input.Touch.pointCount; i < MAX_TOUCH_POINTS; i++) CORE.Input.Touch.currentTouchState[i] = 0;
++}
++
++// (OM: pad slots) The slot that holds the pad with this SDL instance id, or -1.
++static int OmPadSlot(SDL_JoystickID id)
++{
++    for (int i = 0; i < MAX_GAMEPADS; i++)
++    {
++        if (platform.gamepad[i] && (SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(platform.gamepad[i])) == id)) return i;
++    }
++    return -1;
+ }
+ 
++// (OM: pad slots) A pad gone: nothing of it stays held.
++static void OmPadClear(int i)
++{
++    memset(CORE.Input.Gamepad.currentButtonState[i], 0, sizeof(CORE.Input.Gamepad.currentButtonState[i]));
++    memset(CORE.Input.Gamepad.axisState[i], 0, sizeof(CORE.Input.Gamepad.axisState[i]));
++    CORE.Input.Gamepad.axisState[i][GAMEPAD_AXIS_LEFT_TRIGGER] = -1.0f;
++    CORE.Input.Gamepad.axisState[i][GAMEPAD_AXIS_RIGHT_TRIGGER] = -1.0f;
++}
++
+ // Register all input events
+ void PollInputEvents(void)
+ {
+@@ -1378,6 +1397,12 @@
+     SDL_Event event = { 0 };
+     while (SDL_PollEvent(&event) != 0)
+     {
++        // (OM: pad slots) a pad's buttons and axes go to the slot that holds it
++        int omSlot = -1;
++        if ((event.type == SDL_CONTROLLERBUTTONDOWN) || (event.type == SDL_CONTROLLERBUTTONUP)) omSlot = OmPadSlot(event.cbutton.which);
++        else if (event.type == SDL_CONTROLLERAXISMOTION) omSlot = OmPadSlot(event.caxis.which);
++        if ((omSlot < 0) && ((event.type == SDL_CONTROLLERBUTTONDOWN) || (event.type == SDL_CONTROLLERBUTTONUP) || (event.type == SDL_CONTROLLERAXISMOTION))) continue;
++
+         // All input events can be processed after polling
+         switch (event.type)
+         {
+@@ -1597,19 +1622,24 @@
+             // Check gamepad events
+             case SDL_JOYDEVICEADDED:
+             {
+-                int jid = event.jdevice.which;
+-
+-                if (!CORE.Input.Gamepad.ready[jid] && (jid < MAX_GAMEPADS))
++                int index = event.jdevice.which;   // (OM: pad slots) a device index, not a slot
++                int jid = -1;
++                if (OmPadSlot(SDL_JoystickGetDeviceInstanceID(index)) < 0)   // (not one already open)
+                 {
+-                    platform.gamepad[jid] = SDL_GameControllerOpen(jid);
++                    for (int i = 0; i < MAX_GAMEPADS; i++) if (!CORE.Input.Gamepad.ready[i]) { jid = i; break; }
++                }
+ 
++                if (jid >= 0)
++                {
++                    platform.gamepad[jid] = SDL_GameControllerOpen(index);
++
+                     if (platform.gamepad[jid])
+                     {
+                         CORE.Input.Gamepad.ready[jid] = true;
+                         CORE.Input.Gamepad.axisCount[jid] = SDL_JoystickNumAxes(SDL_GameControllerGetJoystick(platform.gamepad[jid]));
+                         CORE.Input.Gamepad.axisState[jid][GAMEPAD_AXIS_LEFT_TRIGGER] = -1.0f;
+                         CORE.Input.Gamepad.axisState[jid][GAMEPAD_AXIS_RIGHT_TRIGGER] = -1.0f;
+-                        strncpy(CORE.Input.Gamepad.name[jid], SDL_GameControllerNameForIndex(jid), 63);
++                        strncpy(CORE.Input.Gamepad.name[jid], SDL_GameControllerNameForIndex(index), 63);
+                         CORE.Input.Gamepad.name[jid][63] = '\0';
+                     }
+                     else
+@@ -1620,13 +1650,14 @@
+             } break;
+             case SDL_JOYDEVICEREMOVED:
+             {
+-                int jid = event.jdevice.which;
++                int jid = OmPadSlot(event.jdevice.which);   // (OM: pad slots) an instance id
+ 
+-                if (jid == SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(platform.gamepad[jid])))
++                if (jid >= 0)
+                 {
+                     SDL_GameControllerClose(platform.gamepad[jid]);
+-                    platform.gamepad[jid] = SDL_GameControllerOpen(0);
++                    platform.gamepad[jid] = NULL;
+                     CORE.Input.Gamepad.ready[jid] = false;
++                    OmPadClear(jid);
+                     memset(CORE.Input.Gamepad.name[jid], 0, 64);
+                 }
+             } break;
+@@ -1660,7 +1691,7 @@
+ 
+                 if (button >= 0)
+                 {
+-                    CORE.Input.Gamepad.currentButtonState[event.jbutton.which][button] = 1;
++                    CORE.Input.Gamepad.currentButtonState[omSlot][button] = 1;
+                     CORE.Input.Gamepad.lastButtonPressed = button;
+                 }
+             } break;
+@@ -1694,7 +1725,7 @@
+ 
+                 if (button >= 0)
+                 {
+-                    CORE.Input.Gamepad.currentButtonState[event.jbutton.which][button] = 0;
++                    CORE.Input.Gamepad.currentButtonState[omSlot][button] = 0;
+                     if (CORE.Input.Gamepad.lastButtonPressed == button) CORE.Input.Gamepad.lastButtonPressed = 0;
+                 }
+             } break;
+@@ -1717,14 +1748,14 @@
+                 {
+                     // SDL axis value range is -32768 to 32767, we normalize it to RayLib's -1.0 to 1.0f range
+                     float value = event.jaxis.value/(float)32767;
+-                    CORE.Input.Gamepad.axisState[event.jaxis.which][axis] = value;
++                    CORE.Input.Gamepad.axisState[omSlot][axis] = value;
+ 
+                     // Register button state for triggers in addition to their axes
+                     if ((axis == GAMEPAD_AXIS_LEFT_TRIGGER) || (axis == GAMEPAD_AXIS_RIGHT_TRIGGER))
+                     {
+                         int button = (axis == GAMEPAD_AXIS_LEFT_TRIGGER)? GAMEPAD_BUTTON_LEFT_TRIGGER_2 : GAMEPAD_BUTTON_RIGHT_TRIGGER_2;
+                         int pressed = (value > 0.1f);
+-                        CORE.Input.Gamepad.currentButtonState[event.jaxis.which][button] = pressed;
++                        CORE.Input.Gamepad.currentButtonState[omSlot][button] = pressed;
+                         if (pressed) CORE.Input.Gamepad.lastButtonPressed = button;
+                         else if (CORE.Input.Gamepad.lastButtonPressed == button) CORE.Input.Gamepad.lastButtonPressed = 0;
+                     }
