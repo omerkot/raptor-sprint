@@ -10,8 +10,18 @@ bool LowerWindow::open(int width, int height) {
     SDL_Window* main = (SDL_Window*)GetWindowHandle();
     SDL_GLContext ctx = SDL_GL_GetCurrentContext();
     if (!main || !ctx) return false;
-    // Display 1 is the lower panel (the launcher sets SDL_VIDEO_DISPLAY_PRIORITY=DSI-2,DSI-1).
-    SDL_Window* w = SDL_CreateWindow("Raptor Sprint lower", SDL_WINDOWPOS_UNDEFINED_DISPLAY(1), SDL_WINDOWPOS_UNDEFINED_DISPLAY(1), width,
+    // Which display is which panel: the lower panel sits below the upper one where the
+    // compositor says so (GNOME); otherwise display 1 is the lower panel (ROCKNIX's launcher
+    // sets SDL_VIDEO_DISPLAY_PRIORITY=DSI-2,DSI-1).
+    int upper = 0, lower = 1;
+    SDL_Rect a, b;
+    if (SDL_GetDisplayBounds(0, &a) == 0 && SDL_GetDisplayBounds(1, &b) == 0 && a.y > b.y) upper = 1, lower = 0;
+    // The view fills the upper panel, before the lower window opens. SDL keeps one fullscreen
+    // window per display and minimizes the other when a second arrives, so each window has to
+    // start on its own panel rather than be moved there by the compositor afterwards.
+    SDL_SetWindowPosition(main, SDL_WINDOWPOS_CENTERED_DISPLAY(upper), SDL_WINDOWPOS_CENTERED_DISPLAY(upper));
+    SDL_SetWindowFullscreen(main, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    SDL_Window* w = SDL_CreateWindow("Raptor Sprint lower", SDL_WINDOWPOS_UNDEFINED_DISPLAY(lower), SDL_WINDOWPOS_UNDEFINED_DISPLAY(lower), width,
                                      height, SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN_DESKTOP);
     if (!w) {
         TraceLog(LOG_WARNING, "lower window: %s", SDL_GetError());

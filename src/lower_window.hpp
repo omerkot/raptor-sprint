@@ -1,5 +1,5 @@
-// The lower screen as a window of its own. On the RG DS under ROCKNIX each panel is a separate
-// Wayland output, so the game opens one fullscreen window per panel: raylib's window on the upper panel, and this one on the lower. Both share raylib's GL
+// The lower screen as a window of its own. On the RG DS (ROCKNIX's sway, DualDist's GNOME) each
+// panel is a separate Wayland output, so the game opens one fullscreen window per panel: raylib's window on the upper panel, and this one on the lower. Both share raylib's GL
 // context, so textures drawn in one can be shown in the other. Only on the SDL build; elsewhere
 // open() returns false and the game stacks both screens in one window.
 #pragma once
